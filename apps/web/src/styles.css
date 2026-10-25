@@ -468,3 +468,133 @@ button.primary:hover:not(:disabled) { box-shadow: 0 4px 18px color-mix(in srgb, 
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
   .card:hover, button.primary:hover:not(:disabled) { transform: none; }
 }
+
+/* =======================================================================
+   Visual redesign layer. Colour tokens above are untouched (contrast-locked); this block only
+   adds atmosphere, depth, glow and motion on top of them.
+   ======================================================================= */
+:root {
+  --aurora-a: rgba(34, 211, 238, 0.16);
+  --aurora-b: rgba(139, 92, 246, 0.13);
+  --aurora-c: rgba(45, 212, 191, 0.12);
+  --grid-dot: rgba(31, 95, 214, 0.10);
+  --accent-2: #8b5cf6;
+  --grad-accent: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--accent-2)));
+  --ring: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+:root[data-theme='dark'], :root:not([data-theme='light']) {
+  --aurora-a: rgba(34, 211, 238, 0.14);
+  --aurora-b: rgba(139, 92, 246, 0.18);
+  --aurora-c: rgba(45, 212, 191, 0.09);
+  --grid-dot: rgba(160, 190, 230, 0.07);
+  --accent-2: #a78bfa;
+}
+@keyframes sheen { 0% { transform: translateX(-120%); } 60%, 100% { transform: translateX(220%); } }
+@keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes ringpulse { 0% { box-shadow: 0 0 0 0 var(--ring); } 100% { box-shadow: 0 0 0 22px transparent; } }
+
+body {
+  background:
+    radial-gradient(720px 420px at 8% -6%, var(--aurora-a), transparent 70%),
+    radial-gradient(760px 460px at 96% 2%, var(--aurora-b), transparent 70%),
+    radial-gradient(900px 500px at 50% 112%, var(--aurora-c), transparent 70%),
+    radial-gradient(var(--grid-dot) 1px, transparent 1px) 0 0 / 22px 22px,
+    var(--bg);
+  background-attachment: fixed;
+}
+
+/* ---- header -------------------------------------------------------------- */
+.brandbar { position: relative; padding: 10px 16px; border-color: transparent; background:
+    linear-gradient(var(--glass), var(--glass)) padding-box,
+    linear-gradient(110deg, color-mix(in srgb, var(--accent) 65%, transparent), color-mix(in srgb, var(--accent-2) 50%, transparent) 50%, var(--border)) border-box;
+  box-shadow: var(--shadow-2), var(--hair-top); }
+.brandbar::after { content: ''; position: absolute; left: 16px; right: 16px; bottom: -1px; height: 1px; background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: 0.55; }
+.brand-logo { animation: floaty 5s ease-in-out infinite; filter: drop-shadow(0 3px 12px color-mix(in srgb, var(--accent) 60%, transparent)); }
+.brandbar .brand h1 { font-size: 19px; font-weight: 700; letter-spacing: -0.005em; }
+.stat { padding: 2px 10px; border-radius: 9px; background: color-mix(in srgb, var(--surface-2) 55%, transparent); border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+.stat-v { font-size: 15px; }
+.statuspill { background: color-mix(in srgb, var(--surface) 70%, transparent); backdrop-filter: blur(6px); box-shadow: var(--hair-top); }
+
+/* ---- buttons / inputs ---------------------------------------------------------- */
+button, .button { border-radius: 9px; }
+button.primary, .button.primary { position: relative; overflow: hidden; background: var(--grad-accent); border-color: transparent; }
+button.primary::after, .button.primary::after { content: ''; position: absolute; inset: 0 auto 0 0; width: 40%; background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent); transform: translateX(-120%); pointer-events: none; }
+button.primary:hover:not(:disabled)::after, .button.primary:hover::after { animation: sheen 0.9s var(--ease-out); }
+button.primary:hover:not(:disabled), .button.primary:hover { background: var(--grad-accent); }
+input, select, textarea { border-radius: 9px; transition: border-color var(--dur-1), box-shadow var(--dur-2) var(--ease-out), background var(--dur-1); }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px var(--ring); }
+.icon-btn { border-radius: 10px; }
+.icon-btn.go:not(:disabled) { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.icon-btn.go:hover:not(:disabled) { animation: ringpulse 1s var(--ease-out); }
+
+/* ---- command panels ---------------------------------------------------- */
+.cmd-panel, .primary-card, .detail-tabs, .card-panel, .issue-summary { background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, var(--accent) 6%), var(--surface)); border-radius: 14px; }
+.cmd-title::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); margin-right: 7px; vertical-align: 1px; }
+
+/* ---- KPI cards -------------------------------------------------------------------- */
+.card { border-radius: 14px; padding: 10px 14px 11px; overflow: hidden; border-color: color-mix(in srgb, var(--tone) 28%, var(--border));
+  background:
+    radial-gradient(120px 70px at 100% 0, color-mix(in srgb, var(--tone) 18%, transparent), transparent 75%),
+    linear-gradient(180deg, color-mix(in srgb, var(--tone) 6%, var(--surface)), var(--surface)); }
+.card::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 3px; background: linear-gradient(90deg, var(--tone), color-mix(in srgb, var(--tone) 30%, transparent)); opacity: 0.9; }
+.card:nth-child(2) { animation-delay: 50ms; } .card:nth-child(3) { animation-delay: 100ms; }
+.card:nth-child(4) { animation-delay: 150ms; } .card:nth-child(5) { animation-delay: 200ms; } .card:nth-child(6) { animation-delay: 250ms; }
+.card:hover { transform: translateY(-3px); box-shadow: var(--shadow-2), 0 10px 30px -10px color-mix(in srgb, var(--tone) 55%, transparent), var(--hair-top); }
+.card.active { box-shadow: var(--shadow-2), 0 0 0 2px var(--tone), 0 10px 34px -8px color-mix(in srgb, var(--tone) 60%, transparent); }
+.card-label { font-size: 10px; letter-spacing: 0.1em; }
+.card-value { font-size: clamp(24px, 2.1vw, 32px); letter-spacing: -0.02em; text-shadow: 0 0 22px color-mix(in srgb, var(--tone) 35%, transparent); }
+.card-meter { height: 16px; border-radius: 9px; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25); }
+.card-meter-fill { overflow: hidden; border-radius: 9px; box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 60%, transparent); }
+.card-meter-fill::after { content: ''; position: absolute; inset: 0 auto 0 0; width: 35%; background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.4), transparent); animation: sheen 2.4s ease-in-out infinite; }
+
+/* ---- issue strip, tray, banners ------------------------------------------------- */
+.issue-chip { border-radius: 999px; padding: 3px 11px; }
+.tray-item > summary { transition: transform var(--dur-1), box-shadow var(--dur-2), border-color var(--dur-1); }
+.tray-item > summary:hover { transform: translateY(-1px); box-shadow: var(--shadow-2), var(--hair-top); border-color: var(--accent); }
+.banner, .google-bar { border-radius: 12px; }
+.banner.error { box-shadow: 0 6px 24px -10px var(--fail); }
+
+/* ---- panels --------------------------------------------------------------------------- */
+.panel-head { padding: 9px 14px; background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 55%, transparent), transparent); }
+.panel-head h2 { display: inline-flex; align-items: center; gap: 8px; }
+.panel-head h2::before { content: ''; width: 4px; height: 14px; border-radius: 3px; background: var(--grad-accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent); }
+.tabbar { padding: 3px; border-radius: 11px; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.14); }
+.tab { border-radius: 8px; padding: 4px 12px; }
+.tab.active, .tab[aria-selected='true'] { background: var(--grad-accent); box-shadow: 0 2px 10px -2px color-mix(in srgb, var(--accent) 60%, transparent); }
+.search { border-radius: 999px; padding: 5px 14px; }
+.splitter::before { background: linear-gradient(180deg, transparent, var(--border), transparent); }
+.splitter:hover::before, .splitter:focus-visible::before { background: var(--grad-accent); box-shadow: 0 0 14px var(--accent); }
+
+/* ---- table -------------------------------------------------------------------------------- */
+.thead { font-size: 10.5px; letter-spacing: 0.09em; background: color-mix(in srgb, var(--surface-2) 88%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); }
+.tr { border-bottom-color: color-mix(in srgb, var(--border) 60%, transparent); }
+.tr:hover { background: color-mix(in srgb, var(--accent) 7%, var(--surface-2)); }
+.tr.selected { background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 22%, transparent), color-mix(in srgb, var(--accent) 6%, transparent)); box-shadow: inset 3px 0 0 var(--accent), 0 0 24px -12px var(--accent); }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 8px; border-radius: 999px; border-color: color-mix(in srgb, currentColor 30%, transparent); }
+.badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; }
+.badge.pending::before { box-shadow: none; opacity: 0.7; }
+.chip { border-radius: 6px; border-left-width: 5px; background: color-mix(in srgb, var(--surface-2) 80%, transparent); }
+.fresh-legend { background: color-mix(in srgb, var(--surface-2) 40%, transparent); }
+
+/* ---- map overlays and cards --------------------------------------------------------- */
+.map-float { border-radius: 13px; }
+.map-stage { border-top: 1px solid var(--border); }
+.pc-date-value { font-size: 28px; background: var(--grad-accent); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: -0.02em; }
+.primary-card { background:
+    radial-gradient(220px 120px at 100% 0, color-mix(in srgb, var(--accent) 16%, transparent), transparent 75%),
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, var(--surface)), var(--surface)); }
+.menu-pop, .tray-pop, .dialog { border-radius: 14px; }
+.dialog { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+
+/* ---- empty state hero ------------------------------------------------------------------------- */
+.empty-state { margin: 18px auto; max-width: 600px; padding: 34px 30px; text-align: center; border-radius: 18px; border: 1px dashed color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: radial-gradient(380px 200px at 50% 0, color-mix(in srgb, var(--accent) 12%, transparent), transparent 75%); animation: rise var(--dur-3) var(--ease-out) both; }
+.empty-state h2 { font-size: 21px; letter-spacing: -0.015em; margin-bottom: 8px; }
+.empty-state p { margin: 6px 0; line-height: 1.55; }
+.hero-orb { width: 84px; height: 84px; margin: 0 auto 16px; border-radius: 50%; display: grid; place-items: center; color: var(--accent-text);
+  background: var(--grad-accent); box-shadow: 0 10px 34px -6px color-mix(in srgb, var(--accent) 65%, transparent), inset 0 2px 0 rgba(255, 255, 255, 0.35); animation: floaty 4.5s ease-in-out infinite, ringpulse 2.8s ease-out infinite; }
+.steps { list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px 0 12px; padding: 0; }
+.steps li { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 8px; border-radius: 12px; font-size: 12.5px; background: color-mix(in srgb, var(--surface-2) 70%, transparent); border: 1px solid var(--border); transition: transform var(--dur-2) var(--ease-spring), border-color var(--dur-1); }
+.steps li:hover { transform: translateY(-3px); border-color: var(--accent); }
+.steps b { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; color: var(--accent-text); background: var(--grad-accent); }
+@media (max-width: 680px) { .steps { grid-template-columns: 1fr; } }

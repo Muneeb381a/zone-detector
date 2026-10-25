@@ -455,8 +455,18 @@ export function App() {
           </div>
           {!hasRows ? (
             <div className="empty-state">
+              <div className="hero-orb" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2 22 7 12 12 2 7Z" /><path d="M2 12 12 17 22 12" /><path d="M2 17 12 22 22 17" />
+                </svg>
+              </div>
               <h2>Paste a Google Sheet link and press Sync</h2>
               <p>The tool reads every row, checks each ArcGIS endpoint, and shows the map’s date, the review date, the status and the reason for any failure.</p>
+              <ol className="steps">
+                <li><b>1</b><span>Paste your sheet link above</span></li>
+                <li><b>2</b><span>Press Sync, then Run</span></li>
+                <li><b>3</b><span>Review dates on the map</span></li>
+              </ol>
               <p className="muted">Share the sheet as “Anyone with the link can view”, or sign in with Google for a private one. Results are saved as they arrive, so closing the tab or restarting the server loses nothing.</p>
             </div>
           ) : tab === 'results' ? (
