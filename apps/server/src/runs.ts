@@ -15,6 +15,7 @@ import {
   type QueueStats,
 } from '@zoning/core';
 import type { Store } from './db';
+import { readPdf } from './pdf';
 
 type Item = QueueItem & { row: CheckRow };
 
@@ -64,7 +65,7 @@ export class Run {
           const cached = store.getCached(canon, ttlMs);
           if (cached) return rebrandResult(cached, row, now, { fromCache: true });
         }
-        const check = () => checkMap(row, { http, config, signal, breaker: this.breaker });
+        const check = () => checkMap(row, { http, config, signal, breaker: this.breaker, pdf: readPdf });
         if (!canon) return check();
         // The same link in several rows is checked once; the other rows share the answer.
         let shared = this.inflight.get(canon);

@@ -26,7 +26,8 @@ export type WarningCode =
   | 'DUPLICATE_URL'
   | 'DATE_SENTINEL_IGNORED'
   | 'DATE_IN_FUTURE'
-  | 'AMBIGUOUS_FORMAT';
+  | 'AMBIGUOUS_FORMAT'
+  | 'DATE_FROM_PDF_PROPERTIES';
 
 export type IssueCode = 'OK' | 'OK_NO_DATE' | FailureCode | WarningCode;
 
@@ -35,7 +36,7 @@ export interface IssueNote {
   reason: string;
 }
 
-export type DateKind = 'attribute' | 'editingInfo' | 'serviceProperty' | 'portalItem';
+export type DateKind = 'attribute' | 'editingInfo' | 'serviceProperty' | 'portalItem' | 'pdfText' | 'pdfProperty';
 export type Confidence = 'high' | 'medium' | 'low';
 
 /** One date found somewhere, with where it came from. Dates are UTC. */

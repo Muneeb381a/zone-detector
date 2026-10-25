@@ -15,6 +15,8 @@ export interface HttpClientOptions {
   connectMs: number;
   totalMs: number;
   maxBytes: number;
+  /** Cap for a PDF response (zoning map PDFs are far larger than ArcGIS JSON). Default 40 MB. */
+  maxPdfBytes?: number;
   /** Tests only: allow loopback and private addresses. Never enable in normal use. */
   allowPrivateHosts?: boolean;
   /** e.g. http://127.0.0.1:8080. Requests go through it. */
@@ -138,7 +140,7 @@ export function createHttpClient(opts: HttpClientOptions): HttpClient & { close(
             redirect: 'manual',
             dispatcher,
             signal: combined,
-            headers: { 'user-agent': opts.userAgent ?? 'ZoningMapDateAuditor/0.1 (+metadata check)', accept: 'application/json, text/plain;q=0.8, */*;q=0.5' },
+            headers: { 'user-agent': opts.userAgent ?? 'ZoningMapDateAuditor/0.1 (+metadata check)', accept: 'application/json, application/pdf;q=0.9, text/plain;q=0.8, */*;q=0.5' },
           });
         } catch (e) {
           if (signal?.aborted) throw e;
@@ -155,6 +157,20 @@ export function createHttpClient(opts: HttpClientOptions): HttpClient & { close(
           continue;
         }
 
+        const headers: Record<string, string> = {};
+        res.headers.forEach((v, k) => (headers[k.toLowerCase()] = v));
+        // A PDF is kept as bytes (decoding it as text would corrupt it) and gets its own, larger size cap.
+        const isPdf = /application\/(x-)?pdf/i.test(headers['content-type'] ?? '') || /\.pdf$/i.test(target.pathname);
+        if (isPdf && res.status >= 200 && res.status < 300) {
+          let bytes: Uint8Array;
+          try {
+            bytes = await readBytesCapped(res.body, opts.maxPdfBytes ?? 40 * 1024 * 1024, combined);
+          } catch (e) {
+            if (signal?.aborted) throw e;
+            throw mapNetworkError(e);
+          }
+          return { status: res.status, headers, body: '', bytes, url: current, ms: performance.now() - started };
+        }
         let body: string;
         try {
           body = await readCapped(res.body, opts.maxBytes, combined);
@@ -162,14 +178,41 @@ export function createHttpClient(opts: HttpClientOptions): HttpClient & { close(
           if (signal?.aborted) throw e;
           throw mapNetworkError(e);
         }
-        const headers: Record<string, string> = {};
-        res.headers.forEach((v, k) => (headers[k.toLowerCase()] = v));
         return { status: res.status, headers, body, url: current, ms: performance.now() - started };
       }
       throw new HttpError('REDIRECT_LOOP', `more than ${maxRedirects} redirects`);
     },
     close: () => dispatcher.close(),
   };
+}
+
+async function readBytesCapped(stream: { getReader(): any } | null, maxBytes: number, signal: AbortSignal): Promise<Uint8Array> {
+  if (!stream) return new Uint8Array(0);
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      if (signal.aborted) throw signal.reason ?? new Error('aborted');
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new HttpError('TOO_LARGE', `PDF exceeds ${maxBytes} bytes`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.byteLength;
+  }
+  return out;
 }
 
 async function readCapped(stream: { getReader(): any } | null, maxBytes: number, signal: AbortSignal): Promise<string> {

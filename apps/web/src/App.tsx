@@ -497,11 +497,16 @@ export function App() {
         <div className="right-col">
           <section className="card-panel map-panel" aria-label="Interactive map viewer">
             <div className="panel-head">
-              <h2>Interactive map viewer</h2>
+              <h2>{selected?.result?.serviceType === 'PDF' ? 'PDF viewer' : 'Interactive map viewer'}</h2>
               {selected && <span className="muted small map-title">{selected.row.city}{selected.row.state ? `, ${selected.row.state}` : ''}</span>}
             </div>
             <div className="map-stage">
-              {selected ? (
+              {selected?.result?.serviceType === 'PDF' ? (
+                <div className="pdf-stage">
+                  <iframe className="pdf-frame" title={`PDF map: ${selected.row.city}`} src={selected.result.normalizedUrl || selected.row.url} />
+                  <a className="button small pdf-open" href={selected.result.normalizedUrl || selected.row.url} target="_blank" rel="noreferrer">Open PDF ↗</a>
+                </div>
+              ) : selected ? (
                 <Suspense fallback={<p className="muted pad">Loading map…</p>}>
                   <MapViewer key={`${selected.row.id}|${selected.row.url}`} row={selected.row} result={selected.result} config={s.config} onRenderFailed={onRenderFailed} />
                 </Suspense>

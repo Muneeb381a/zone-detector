@@ -8,6 +8,7 @@ import { earliest, fromEpochMs, isFuture, latest, localDate, parseDateStrings } 
 import type { HostBreaker } from './breaker';
 import { AbortedError, HttpError, type HttpClient, type HttpResponse } from './http';
 import { TOOL_VERSION } from './issues';
+import { findTextDates, isPdfContentType, isPdfUrl, looksLikePdf, parsePdfDate, pickTextDate, type PdfReader } from './pdf';
 import { extractRefs, itemDataUrl, itemUrl, portalBases, SERVICE_ITEM_TYPES, type ChildItem, type ServiceRef } from './portal';
 import type {
   CheckResult,
@@ -32,6 +33,8 @@ export interface EngineDeps {
   via?: 'server' | 'browser';
   /** Shared across one run so a dead host is skipped after repeated connection failures. */
   breaker?: HostBreaker;
+  /** Reads PDF files (server only). Without it a PDF link is reported as unreadable. */
+  pdf?: PdfReader;
 }
 
 class Failure extends Error {
@@ -108,6 +111,24 @@ function arcgisError(err: any, status: number): Failure {
   return new Failure('ARCGIS_ERROR', `ArcGIS returned an error${code ? ` (${code})` : ''}${msg ? `: ${msg}` : ''}.`);
 }
 
+function throwForStatus(res: HttpResponse): void {
+  const s = res.status;
+  const retryAfterMs = parseRetryAfter(res.headers['retry-after']);
+  if (s === 404) throw new Failure('HTTP_404', 'Not found (404). The service was moved or deleted.');
+  if (s === 410) throw new Failure('HTTP_410', 'Gone (410). The service was removed.');
+  if (s === 401 || s === 403) throw new Failure('HTTP_401_403', `Access denied (${s}). The service is secured, or the server blocks this location.`);
+  if (s === 429) throw new Failure('HTTP_429', 'The server is rate limiting requests (429).', retryAfterMs);
+  if (s >= 500) throw new Failure('HTTP_5XX', `Server error (${s}).`, retryAfterMs);
+  if (s < 200 || s >= 300) throw new Failure('NOT_ARCGIS', `The server answered HTTP ${s}, not ArcGIS data.`);
+}
+
+/** A link expected to be an ArcGIS service answered with a PDF. Not a failure: the PDF is read instead. */
+class PdfDetected extends Error {
+  constructor(public res: HttpResponse) {
+    super('pdf');
+  }
+}
+
 /** Turn an HTTP response into parsed ArcGIS JSON, or throw a classified Failure. */
 function interpret(res: HttpResponse): any {
   const s = res.status;
@@ -125,14 +146,10 @@ function interpret(res: HttpResponse): any {
   // ArcGIS reports errors as JSON, frequently with HTTP 200 (498/499 token errors especially).
   if (parsed && json && typeof json === 'object' && json.error) throw arcgisError(json.error, s);
 
-  const retryAfterMs = parseRetryAfter(res.headers['retry-after']);
-  if (s === 404) throw new Failure('HTTP_404', 'Not found (404). The service was moved or deleted.');
-  if (s === 410) throw new Failure('HTTP_410', 'Gone (410). The service was removed.');
-  if (s === 401 || s === 403) throw new Failure('HTTP_401_403', `Access denied (${s}). The service is secured, or the server blocks this location.`);
-  if (s === 429) throw new Failure('HTTP_429', 'The server is rate limiting requests (429).', retryAfterMs);
-  if (s >= 500) throw new Failure('HTTP_5XX', `Server error (${s}).`, retryAfterMs);
-  if (s < 200 || s >= 300) throw new Failure('NOT_ARCGIS', `The server answered HTTP ${s}, not ArcGIS data.`);
+  throwForStatus(res);
   if (!parsed) {
+    // A PDF where a service was expected: hand the response to the PDF reader instead of failing.
+    if (res.bytes || isPdfContentType(res.headers['content-type'])) throw new PdfDetected(res);
     const html = /html/i.test(res.headers['content-type'] ?? '') || /^<(!doctype|html)/i.test(text);
     throw new Failure('NOT_ARCGIS', html ? 'The server returned a web page, not ArcGIS data. Find the REST endpoint (…/MapServer or …/FeatureServer).' : 'The server did not return JSON, so this is not an ArcGIS REST endpoint.');
   }
@@ -191,6 +208,11 @@ function safeHost(url: string): string {
 }
 
 async function requestJson(ctx: Ctx, url: string): Promise<any> {
+  return request(ctx, url, interpret);
+}
+
+/** GET with the shared retry, breaker and error classification; `handle` turns the response into the result or throws a Failure. */
+async function request<T>(ctx: Ctx, url: string, handle: (res: HttpResponse) => T): Promise<T> {
   const { http, config, signal } = ctx.deps;
   const sleep = ctx.deps.sleep ?? defaultSleep;
   ctx.lastUrl = url;
@@ -205,8 +227,9 @@ async function requestJson(ctx: Ctx, url: string): Promise<any> {
       const res = await http.get(url, { signal });
       ctx.ms += res.ms;
       breaker?.recordSuccess(hostKey); // any HTTP answer proves the host is reachable
-      return interpret(res);
+      return handle(res);
     } catch (e) {
+      if (e instanceof PdfDetected) throw e;
       if (!(e instanceof Failure)) ctx.ms += performance.now() - started; // time spent on requests that failed outright
       if (signal?.aborted || e instanceof AbortedError) throw new AbortedError();
       if (e instanceof Failure) failure = e;
@@ -227,7 +250,7 @@ async function requestJson(ctx: Ctx, url: string): Promise<any> {
 // Date evidence
 // ---------------------------------------------------------------------------
 
-const CONFIDENCE: Record<DateKind, Confidence> = { attribute: 'high', editingInfo: 'high', serviceProperty: 'medium', portalItem: 'low' };
+const CONFIDENCE: Record<DateKind, Confidence> = { attribute: 'high', editingInfo: 'high', serviceProperty: 'medium', portalItem: 'low', pdfText: 'medium', pdfProperty: 'low' };
 
 function warn(ctx: Ctx, code: IssueNote['code'], reason: string) {
   if (!ctx.warnings.some((w) => w.code === code && w.reason === reason)) ctx.warnings.push({ code, reason });
@@ -490,10 +513,12 @@ export function pickPrimary(dates: DateEvidence[], priority: DateKind[], mode: '
     editingInfo: editing,
     serviceProperty: pickLatest(dates, 'serviceProperty'),
     portalItem: pickLatest(dates, 'portalItem'),
+    pdfText: pickLatest(dates, 'pdfText'),
+    pdfProperty: pickLatest(dates, 'pdfProperty'),
   };
   let primary: DateEvidence | null = null;
   if (mode === 'latest') {
-    const rank: Record<DateKind, number> = { attribute: 3, editingInfo: 2, serviceProperty: 1, portalItem: 0 };
+    const rank: Record<DateKind, number> = { attribute: 3, editingInfo: 2, serviceProperty: 1, portalItem: 0, pdfText: 1, pdfProperty: 0 };
     const eligible = dates.filter((d) => d.primaryEligible && d.kind !== 'portalItem');
     primary = eligible.reduce<DateEvidence | null>((best, date) => (
       !best ||
@@ -532,6 +557,10 @@ interface Analysis {
   resolvedUrl?: string;
   /** For viewer links: the chain of portal items followed, e.g. `Web Mapping Application "X" → Web Map "Y"`. */
   resolvedFrom?: string;
+  /** PDFs only: the date already chosen (text first, then document properties), replacing the ArcGIS pick. */
+  primary?: DateEvidence | null;
+  /** PDFs only: the PDF had no readable text, so no date could be found in it. */
+  noText?: boolean;
 }
 
 const CONNECTION_LEVEL_CODES = new Set<FailureCode>(['TIMEOUT', 'DNS_FAIL', 'SSL_ERROR', 'CONNECTION_FAILED', 'HOST_UNREACHABLE']);
@@ -731,6 +760,57 @@ async function analyse(ctx: Ctx, norm: Extract<NormalizedUrl, { ok: true }>): Pr
   return { serviceType, layers, rootUrl };
 }
 
+// ---------------------------------------------------------------------------
+// PDF maps
+// ---------------------------------------------------------------------------
+
+/** The date of a PDF: written in its text if there is one, otherwise its document properties (ModDate, then CreationDate). */
+async function analysePdf(ctx: Ctx, url: string, first?: HttpResponse): Promise<Analysis> {
+  const reader = ctx.deps.pdf;
+  if (!reader) throw new Failure('NOT_ARCGIS', 'This link is a PDF. PDFs are read by the server only, so they cannot be checked from the browser.');
+  ctx.lastUrl = url;
+  const res = first ?? (await request(ctx, url, (r) => (throwForStatus(r), r)));
+  const bytes = res.bytes;
+  if (!bytes || !looksLikePdf(bytes)) throw new Failure('NOT_ARCGIS', 'The link was expected to be a PDF, but the server sent something else.');
+
+  let content;
+  try {
+    content = await reader(bytes);
+  } catch (e) {
+    throw new Failure('NOT_ARCGIS', `The PDF could not be read (${e instanceof Error ? e.message : String(e)}). It may be damaged or password-protected.`);
+  }
+  const evidenceUrl = res.url || url;
+  const push = (date: string, iso: string, source: string, kind: 'pdfText' | 'pdfProperty', confidence: Confidence, eligible: boolean, field?: string) => {
+    const ev: DateEvidence = { date, iso, kind, source, field, role: 'value', primaryEligible: eligible, evidenceUrl, confidence, future: isFuture(date, ctx.now) };
+    ctx.dates.push(ev);
+    return ev;
+  };
+
+  const textDates = findTextDates(content.text, ctx.now);
+  const chosenText = pickTextDate(textDates);
+  let primary: DateEvidence | null = null;
+  for (const t of textDates.slice(0, 12)) {
+    const isChosen = t === chosenText;
+    const label = t.keyword ? `PDF:text (${t.keyword})` : 'PDF:text';
+    const ev = push(t.date, `${t.date}T00:00:00.000Z`, label, 'pdfText', t.keyword ? 'high' : 'medium', isChosen, t.keyword);
+    if (isChosen) primary = ev;
+  }
+  if (chosenText?.ambiguous) warn(ctx, 'AMBIGUOUS_FORMAT', `The date "${chosenText.snippet}" was read as month/day/year. If the city writes day/month/year, it is a different date.`);
+
+  const mod = parsePdfDate(content.info.modDate);
+  const created = parsePdfDate(content.info.creationDate);
+  const props: [string, ReturnType<typeof parsePdfDate>][] = [['ModDate', mod], ['CreationDate', created]];
+  for (const [name, d] of props) {
+    if (!d || d.date < '1990-01-01') continue;
+    const wantPrimary = !primary && (name === 'ModDate' || !mod || mod.date < '1990-01-01');
+    const ev = push(d.date, d.iso, `PDF:${name}`, 'pdfProperty', 'low', wantPrimary, name);
+    if (wantPrimary) primary = ev;
+  }
+  if (primary && primary.kind === 'pdfProperty') warn(ctx, 'DATE_FROM_PDF_PROPERTIES', `No date is written in the PDF itself, so its document property ${primary.field} (${primary.date}) was used. That is when the file was saved, which can differ from when the map was last updated.`);
+
+  return { serviceType: 'PDF', layers: [], rootUrl: url, resolvedUrl: evidenceUrl, primary, noText: content.text.trim().length < 20 };
+}
+
 const dateOrNone = (e: DateEvidence | null) => (e ? e.date : 'None');
 
 export async function checkMap(row: CheckRow, deps: EngineDeps): Promise<CheckResult> {
@@ -748,16 +828,25 @@ export async function checkMap(row: CheckRow, deps: EngineDeps): Promise<CheckRe
     failure = new Failure('HOST_UNREACHABLE', deps.breaker.describe(norm.host));
   } else {
     try {
-      analysis = await analyse(ctx, norm);
+      analysis = isPdfUrl(row.url) ? await analysePdf(ctx, row.url) : await analyse(ctx, norm);
     } catch (e) {
       if (e instanceof AbortedError) throw e;
-      if (e instanceof Failure) failure = e;
+      if (e instanceof PdfDetected) {
+        try {
+          analysis = await analysePdf(ctx, row.url, e.res);
+        } catch (e2) {
+          if (e2 instanceof AbortedError) throw e2;
+          failure = e2 instanceof Failure ? e2 : new Failure('ARCGIS_ERROR', `Unexpected error while reading this PDF: ${e2 instanceof Error ? e2.message : String(e2)}`);
+        }
+      } else if (e instanceof Failure) failure = e;
       else failure = new Failure('ARCGIS_ERROR', `Unexpected error while checking this map: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
   const zoningLayers = new Set((analysis?.layers ?? []).filter((l) => l.zoningScore > 0).map((l) => l.name));
-  const picked = pickPrimary(ctx.dates, deps.config.datePriority, deps.config.dateSelection, zoningLayers);
+  const picked = analysis?.serviceType === 'PDF'
+    ? { primary: analysis.primary ?? null, attrMax: null, attrMin: null, editing: null }
+    : pickPrimary(ctx.dates, deps.config.datePriority, deps.config.dateSelection, zoningLayers);
   const otherDateFields = unique((analysis?.layers ?? []).flatMap((l) => l.otherDateFields.map((f) => `${l.name}.${f}`)));
   const issues: IssueNote[] = [];
 
@@ -767,7 +856,12 @@ export async function checkMap(row: CheckRow, deps: EngineDeps): Promise<CheckRe
   } else if (!picked.primary) {
     status = 'OK_NO_DATE';
     const extra = otherDateFields.length ? ` Other date fields exist (${otherDateFields.slice(0, 4).join(', ')}${otherDateFields.length > 4 ? ', …' : ''}); see Other Date Fields Found.` : '';
-    issues.push({ code: 'OK_NO_DATE', reason: `The map loaded, but no date was found in the service metadata or attributes.${extra}` });
+    issues.push({
+      code: 'OK_NO_DATE',
+      reason: analysis?.serviceType === 'PDF'
+        ? `The PDF loaded, but no date was found in its text or its document properties.${analysis.noText ? ' It has no readable text, so it may be a scanned image.' : ''}`
+        : `The map loaded, but no date was found in the service metadata or attributes.${extra}`,
+    });
   }
   issues.push(...ctx.warnings.filter((w) => !(failure && w.code === failure.code)));
   for (const pre of resultPreIssues(row)) if (!issues.some((i) => i.code === pre.code)) issues.push(pre);

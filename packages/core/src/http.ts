@@ -13,6 +13,8 @@ export interface HttpResponse {
   url: string;
   /** Wall time of the request in ms. */
   ms: number;
+  /** Raw bytes, set only for PDF responses (the string body would corrupt them); `body` is empty then. */
+  bytes?: Uint8Array;
 }
 
 export type HttpErrorCode =
