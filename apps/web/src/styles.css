@@ -598,3 +598,47 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .steps li:hover { transform: translateY(-3px); border-color: var(--accent); }
 .steps b { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; color: var(--accent-text); background: var(--grad-accent); }
 @media (max-width: 680px) { .steps { grid-template-columns: 1fr; } }
+
+/* =======================================================================
+   Redesign pass 2: distinct colour per KPI, icons, ring gauges, segmented issue bar, calmer density.
+   ======================================================================= */
+.cards { gap: 10px; }
+.card { justify-content: space-between; gap: 6px; padding: 11px 14px 12px; }
+.card-all { --tone: var(--accent-2); }
+.card-checked { --tone: var(--accent); }
+.card-passed { --tone: var(--green); }
+.card-nodate { --tone: var(--yellow); }
+.card-issues { --tone: var(--red); }
+.card-pending { --tone: var(--grey); }
+.card-top { display: flex; align-items: center; gap: 8px; width: 100%; }
+.card-icon { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 8px; color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 16%, transparent); border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent); }
+.card-body { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; width: 100%; }
+.card-value { font-size: clamp(26px, 2.3vw, 36px); line-height: 1; }
+.card-ring { --p: 0%; position: relative; width: 38px; height: 38px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  background: conic-gradient(var(--tone) var(--p), color-mix(in srgb, var(--tone) 16%, var(--surface-2)) 0);
+  box-shadow: 0 0 14px -2px color-mix(in srgb, var(--tone) 45%, transparent); }
+.card-ring::before { content: ''; position: absolute; inset: 5px; border-radius: 50%; background: var(--surface); }
+.card-ring span { position: relative; font: 700 9px var(--font-mono); color: var(--text); }
+.card-all .card-body::after { content: none; }
+
+/* segmented issue bar */
+.issue-summary { flex-wrap: wrap; row-gap: 8px; }
+.issue-bar { display: flex; flex: 1 1 100%; order: 3; height: 8px; gap: 3px; border-radius: 99px; overflow: hidden; }
+.issue-bar .seg { min-width: 6px; border-radius: 99px; transition: flex-grow var(--dur-3) var(--ease-out), filter var(--dur-1); }
+.issue-bar .seg:hover { filter: brightness(1.25); }
+.issue-bar .seg.ok { background: var(--accent); }
+.issue-bar .seg.warn { background: var(--green); }
+.issue-bar .seg.fail { background: var(--red); }
+.issue-bar .seg.pending { background: var(--grey); }
+
+/* primary-date card: buttons no longer clip */
+.primary-card { min-width: 0; }
+.pc-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.pc-actions .primary { grid-column: 1 / -1; padding: 8px 12px; white-space: nowrap; }
+.pc-actions button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pc-actions .small { padding: 5px 8px; font-size: 12px; }
+.bottom-row { grid-template-columns: minmax(0, 1fr) minmax(270px, 330px); }
+
+/* header: bolder title */
+.brandbar .brand h1 { background: linear-gradient(92deg, var(--text) 20%, var(--accent) 70%, var(--accent-2)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-size: 20px; }

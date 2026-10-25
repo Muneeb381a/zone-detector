@@ -134,23 +134,39 @@ const CARDS: { key: Filters['card']; label: string; value: (s: Summary) => numbe
   { key: 'pending', label: 'Pending', value: (s) => s.pending, hint: 'Not checked yet' },
 ];
 
+const CARD_ICONS: Record<Filters['card'], string> = {
+  all: 'M12 2 22 7 12 12 2 7zM2 12l10 5 10-5M2 17l10 5 10-5',
+  checked: 'M4 12l5 5L20 6',
+  passed: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM8 12l3 3 5-6',
+  nodate: 'M7 3v3M17 3v3M4 8h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM9 14h6',
+  issues: 'M12 3 2 20h20L12 3zM12 10v4M12 17v.5',
+  pending: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2',
+};
+
 export function SummaryCards(props: { summary: Summary; active: Filters['card']; onPick(c: Filters['card']): void }) {
   const s = props.summary;
   return (
     <div className="cards" role="group" aria-label="Summary">
       {CARDS.map((c) => {
         const val = c.value(s);
-        const pct = c.key === 'checked' && s.total ? Math.round((s.checked / s.total) * 100) : null;
+        // Share of all maps this card represents; drives the ring on the right.
+        const pct = c.key !== 'all' && s.total ? Math.round((val / s.total) * 100) : null;
         return (
           <button key={c.key} className={`card ${props.active === c.key && c.key !== 'all' ? 'active' : ''} card-${c.key}`} onClick={() => props.onPick(props.active === c.key ? 'all' : c.key)} aria-pressed={props.active === c.key && c.key !== 'all'} title={`${c.hint}. Click to filter the table.`}>
-            <span className="card-label">{c.label}</span>
-            <span className="card-value">{val.toLocaleString()}</span>
-            {pct !== null && (
-              <span className="card-meter" role="img" aria-label={`${pct}% checked`}>
-                <span className="card-meter-fill" style={{ width: `${pct}%` }} />
-                <span className="card-sub">{pct}%</span>
+            <span className="card-top">
+              <span className="card-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={CARD_ICONS[c.key]} /></svg>
               </span>
-            )}
+              <span className="card-label">{c.label}</span>
+            </span>
+            <span className="card-body">
+              <span className="card-value">{val.toLocaleString()}</span>
+              {pct !== null && (
+                <span className="card-ring" role="img" aria-label={`${pct}% of all maps`} style={{ ['--p' as string]: `${pct}%` }}>
+                  <span>{pct}%</span>
+                </span>
+              )}
+            </span>
           </button>
         );
       })}
@@ -170,6 +186,9 @@ export function IssueSummary({ results }: { results: Record<string, CheckResult>
   return (
     <div className="issue-summary">
       <span className="issue-summary-label">Summary by issue <span className="muted">({checked.toLocaleString()} checked)</span></span>
+      <div className="issue-bar" role="img" aria-label="Share of each result">
+        {counts.map(([code, n]) => <span key={code} className={`seg ${cls(code)}`} style={{ flexGrow: n }} title={`${code}: ${n}`} />)}
+      </div>
       <div className="issue-chips">
         {counts.map(([code, n]) => <span key={code} className={`issue-chip ${cls(code)}`}>{code}: {n}</span>)}
       </div>
