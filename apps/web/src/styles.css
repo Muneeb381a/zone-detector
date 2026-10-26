@@ -664,3 +664,23 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .gpkg-progress { height: 10px; border-radius: 99px; background: var(--surface-2); overflow: hidden; margin: 14px 0 8px; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25); }
 .gpkg-progress span { display: block; height: 100%; border-radius: 99px; background: var(--grad-accent); transition: width var(--dur-3) var(--ease-out); box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent); }
 .gpkg-report { margin-top: 8px; max-height: 32vh; display: block; overflow: auto; }
+
+/* Map type: Type column, summary chips */
+.type-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; border: 1px solid transparent; }
+.type-badge.map { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 34%, transparent); }
+.type-badge.pdf { color: var(--orange); background: color-mix(in srgb, var(--orange) 14%, transparent); border-color: color-mix(in srgb, var(--orange) 40%, transparent); }
+.type-count { font-family: var(--font-mono); font-size: 11px; padding: 0 6px; border-radius: 99px; color: inherit; border: 1px solid currentColor; }
+.type-note { font-style: normal; font-weight: 600; font-size: 10px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.06em; }
+.type-warn { font-style: normal; color: var(--warn); }
+.type-summary { flex: 0 1 auto; gap: 8px; }
+.type-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); background: var(--surface); }
+.type-chip b { font-family: var(--font-mono); }
+.type-chip .type-files { font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--muted); padding-left: 6px; border-left: 1px solid var(--border); }
+.type-chip.map { color: var(--accent); }
+.type-chip.pdf { color: var(--orange); }
+.type-chip.on { box-shadow: 0 0 0 2px currentColor; }
+.type-chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+.type-chip.other { color: var(--muted); }
+button.type-chip:hover { background: var(--surface-2); }
+
+.type-warn { font-size: 10.5px; font-weight: 700; }

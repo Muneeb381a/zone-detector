@@ -16,6 +16,11 @@ export function FilterBar(props: { rows: CheckRow[]; results: Record<string, Che
         <option value="PENDING">PENDING</option>
         {statuses.map((s) => <option key={s}>{s}</option>)}
       </select>
+      <select aria-label="Map type" value={f.type} onChange={(e) => props.onChange({ type: e.target.value as Filters['type'] })}>
+        <option value="">Type: any</option>
+        <option value="interactive">Interactive map</option>
+        <option value="pdf">PDF</option>
+      </select>
       <select aria-label="State" value={f.state} onChange={(e) => props.onChange({ state: e.target.value })}>
         <option value="">State: any</option>
         {states.map((s) => <option key={s}>{s}</option>)}

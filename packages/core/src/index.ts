@@ -17,3 +17,4 @@ export * from './legend';
 export * from './portal';
 export * from './suggest';
 export * from './pdf';
+export * from './maptype';

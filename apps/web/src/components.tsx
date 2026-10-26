@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
-import { freshness, groupByCity, ISSUE_INFO, isFailure, type CheckResult, type CheckRow, type ColumnMapping, type DisplayRow, type Filters, type QueueStats, type RawConfig, type Summary, type SyncMode } from '@zoning/core';
+import { freshness, groupByCity, ISSUE_INFO, isFailure, mapTypeOf, summarizeTypes, type CheckResult, type CheckRow, type ColumnMapping, type DisplayRow, type Filters, type QueueStats, type RawConfig, type Summary, type SyncMode } from '@zoning/core';
 import type { RemovedRow, State } from './store';
 import { Logo } from './Logo';
 
@@ -170,6 +170,49 @@ export function SummaryCards(props: { summary: Summary; active: Filters['card'];
           </button>
         );
       })}
+    </div>
+  );
+}
+
+const MAP_ICON = 'M12 2 22 7 12 12 2 7zM2 12l10 5 10-5M2 17l10 5 10-5';
+const PDF_ICON = 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4';
+const TypeIcon = ({ d }: { d: string }) => (
+  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>
+);
+
+/** The Type column: interactive map or PDF, how many PDF files sit behind the link, and a note when the sheet says otherwise. */
+export function TypeBadge({ row, result }: { row: CheckRow; result?: CheckResult }) {
+  const k = mapTypeOf(row, result);
+  if (k.type === 'unknown') return <span className="muted" title="The kind of map is not known: the link is neither an ArcGIS address nor a PDF.">—</span>;
+  const pdf = k.type === 'pdf';
+  const how = k.basis === 'checked' ? 'Found by checking the link.' : k.basis === 'link' ? 'Judged from the shape of the link (not checked yet, or the check failed).' : 'Taken from the sheet\u2019s own type column: the link itself is empty.';
+  const sheet = k.mismatch ? ` The sheet\u2019s type column says ${k.sheetType === 'pdf' ? 'PDF' : 'ArcGIS'}.` : '';
+  const files = pdf ? (k.pdfCount > 1 ? `${k.pdfCount} PDF files behind this link.` : '1 PDF file.') : k.pdfCount > 0 ? `This viewer also links to ${k.pdfCount} PDF file${k.pdfCount === 1 ? '' : 's'}.` : '';
+  return (
+    <span className={`type-badge ${pdf ? 'pdf' : 'map'}`} title={`${k.label}. ${files} ${how}${sheet}`.replace(/\s+/g, ' ').trim()}>
+      <TypeIcon d={pdf ? PDF_ICON : MAP_ICON} />
+      {pdf ? 'PDF' : 'Interactive map'}
+      {pdf && k.pdfCount > 1 && <b className="type-count">×{k.pdfCount}</b>}
+      {!pdf && k.pdfCount > 0 && <b className="type-count">+{k.pdfCount} PDF</b>}
+      {k.basis === 'sheet' && <i className="type-note">sheet</i>}
+      {k.mismatch && <i className="type-warn">⚠ sheet: {k.sheetType === 'pdf' ? 'PDF' : 'ArcGIS'}</i>}
+    </span>
+  );
+}
+
+/** Counts of each kind of map and of PDF files; a click filters the table. */
+export function TypeSummary(props: { rows: CheckRow[]; results: Record<string, CheckResult>; active: '' | 'interactive' | 'pdf'; onPick(t: '' | 'interactive' | 'pdf'): void }) {
+  const s = useMemo(() => summarizeTypes(props.rows, props.results), [props.rows, props.results]);
+  if (props.rows.length === 0) return null;
+  const pick = (t: 'interactive' | 'pdf') => props.onPick(props.active === t ? '' : t);
+  const differing = props.rows.filter((r) => mapTypeOf(r, props.results[r.id]).mismatch).map((r) => `${r.city}${r.state ? `, ${r.state}` : ''} (sheet: ${mapTypeOf(r, props.results[r.id]).sheetType === 'pdf' ? 'PDF' : 'ArcGIS'})`);
+  return (
+    <div className="issue-summary type-summary" role="group" aria-label="Map types">
+      <span className="issue-summary-label">Map types</span>
+      <button className={`type-chip map ${props.active === 'interactive' ? 'on' : ''}`} onClick={() => pick('interactive')} aria-pressed={props.active === 'interactive'} title="Show interactive ArcGIS maps only"><TypeIcon d={MAP_ICON} /> Interactive <b>{s.interactive.toLocaleString()}</b></button>
+      <button className={`type-chip pdf ${props.active === 'pdf' ? 'on' : ''}`} onClick={() => pick('pdf')} aria-pressed={props.active === 'pdf'} title="Show PDF maps only"><TypeIcon d={PDF_ICON} /> PDF <b>{s.pdf.toLocaleString()}</b><span className="type-files">{s.pdfFiles.toLocaleString()} file{s.pdfFiles === 1 ? '' : 's'}</span></button>
+      {s.unknown > 0 && <span className="type-chip other" title="Rows whose link is neither an ArcGIS address nor a PDF">Unknown <b>{s.unknown.toLocaleString()}</b></span>}
+      {s.mismatches > 0 && <span className="type-chip warn" title={`The sheet’s type column and the link disagree: ${differing.slice(0, 8).join('; ')}${differing.length > 8 ? '; …' : ''}`}>⚠ {s.mismatches.toLocaleString()} differ from the sheet</span>}
     </div>
   );
 }
@@ -515,6 +558,21 @@ function IssuesTab({ r, row }: { r: CheckResult; row: CheckRow }) {
     <>
       <dl className="facts">
         <dt>Link</dt><dd className="break small"><a href={row.url} target="_blank" rel="noreferrer">{row.url || '(empty)'}</a></dd>
+        {(() => {
+          const k = mapTypeOf(row, r);
+          return (
+            <>
+              <dt>Type</dt>
+              <dd>{k.label}{k.type === 'pdf' ? ` · ${k.pdfCount} PDF file${k.pdfCount === 1 ? '' : 's'}` : k.pdfCount > 0 ? ` · links to ${k.pdfCount} PDF file${k.pdfCount === 1 ? '' : 's'}` : ''}{k.mismatch ? <span className="warn-text small"> · the sheet says {k.sheetType === 'pdf' ? 'PDF' : 'ArcGIS'}</span> : null}</dd>
+              {k.pdfLinks.length > 0 && (
+                <>
+                  <dt>PDF files</dt>
+                  <dd className="break small">{k.pdfLinks.map((u) => <div key={u}><a href={u} target="_blank" rel="noreferrer">{decodeURIComponent(u.split(/[?#]/)[0].split('/').pop() || u)}</a></div>)}</dd>
+                </>
+              )}
+            </>
+          );
+        })()}
         {r.resolvedFrom && (<><dt>Resolved from</dt><dd className="break small">{r.resolvedFrom}</dd></>)}
         {row.fallback && (<><dt>Link taken from</dt><dd>{row.fallbackColumn ? `column “${row.fallbackColumn}” (Map URL was empty)` : 'the fallback column'}</dd></>)}
         {r.itemModifiedDate !== 'None' && (<><dt>Portal item date</dt><dd>{r.itemModifiedDate} <span className="muted small">low confidence</span></dd></>)}

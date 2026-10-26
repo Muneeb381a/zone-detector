@@ -5,7 +5,7 @@ import {
 import { addDateFields, ApiError, authStatus, controlRun, fetchConfig, loadState, openRunStream, saveResults, signOutGoogle, syncRows, syncSheet, type RunStream } from './api';
 import { recheckInBrowser, type BrowserCheckHandle } from './browserCheck';
 import { GeoPackageDialog } from './GeoPackageDialog';
-import { BrandBar, CityPanel, DetailTabs, FreshnessLegend, IssueSummary, MappingPanel, PrimaryDateCard, RemovedPanel, RunControls, SheetPanel, SummaryCards, TrayItem } from './components';
+import { BrandBar, CityPanel, DetailTabs, FreshnessLegend, IssueSummary, MappingPanel, PrimaryDateCard, RemovedPanel, RunControls, SheetPanel, SummaryCards, TrayItem, TypeSummary } from './components';
 import { FilterBar } from './FilterBar';
 import { ExportMenu, GoogleBar, PreviewCopyDialog, SuggestionsPanel, ThemeToggle, WriteBackDialog } from './Phase3Panels';
 import { ResultsTable } from './ResultsTable';
@@ -415,6 +415,7 @@ export function App() {
       )}
       <div className="strip-row">
         <IssueSummary results={s.results} />
+        <TypeSummary rows={s.rows} results={s.results} active={s.filters.type} onPick={(type) => dispatch({ type: 'filters', patch: { type } })} />
         <div className="tray">
           {(s.browserCheck?.running || networkBlockedIds.length > 0) && (
             <TrayItem

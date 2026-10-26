@@ -1,6 +1,7 @@
 /** Results-table filters (PRD 10.5): summary card, city, status, issue code, state, date range, older than N years, no date, free text. */
 import { ageYears } from './freshness';
 import { isFailure } from './issues';
+import { mapTypeOf } from './maptype';
 import type { CheckResult, CheckRow } from './types';
 
 export type CardFilter = 'all' | 'checked' | 'passed' | 'nodate' | 'issues' | 'pending';
@@ -20,9 +21,11 @@ export interface Filters {
   /** 0 / null = off. */
   olderThanYears: number | null;
   noDate: boolean;
+  /** Interactive map or PDF; '' for any. */
+  type: '' | 'interactive' | 'pdf';
 }
 
-export const NO_FILTERS: Filters = { card: 'all', city: null, text: '', status: '', code: '', state: '', dateFrom: '', dateTo: '', olderThanYears: null, noDate: false };
+export const NO_FILTERS: Filters = { card: 'all', city: null, text: '', status: '', code: '', state: '', dateFrom: '', dateTo: '', olderThanYears: null, noDate: false, type: '' };
 
 export const cityKey = (row: Pick<CheckRow, 'city' | 'state'>) => `${row.city.toLowerCase()}|${row.state.toLowerCase()}`;
 
@@ -54,6 +57,8 @@ export function applyFilters(rows: CheckRow[], results: Record<string, CheckResu
     if (f.state && row.state.toLowerCase() !== f.state.toLowerCase()) continue;
     if (f.status && (st ?? 'PENDING') !== f.status) continue;
     if (f.code && !result?.issues.some((i) => i.code === f.code)) continue;
+    const kind = mapTypeOf(row, result);
+    if (f.type && kind.type !== f.type) continue;
 
     const hasDate = !!result && /^\d{4}-\d{2}-\d{2}$/.test(result.primaryDate);
     if (f.noDate && hasDate) continue;
@@ -65,7 +70,7 @@ export function applyFilters(rows: CheckRow[], results: Record<string, CheckResu
       if (f.olderThanYears && ageYears(d, now) <= f.olderThanYears) continue;
     }
     if (q) {
-      const hay = `${row.city} ${row.state} ${row.county} ${row.url} ${st ?? 'pending'} ${result?.issues.map((i) => i.code).join(' ') ?? ''} ${result?.issueReason ?? ''} ${result?.primaryDate ?? ''} ${result?.reviewer ?? ''} ${result?.analystNote ?? ''}`.toLowerCase();
+      const hay = `${kind.label} ${kind.type} ${row.city} ${row.state} ${row.county} ${row.url} ${st ?? 'pending'} ${result?.issues.map((i) => i.code).join(' ') ?? ''} ${result?.issueReason ?? ''} ${result?.primaryDate ?? ''} ${result?.reviewer ?? ''} ${result?.analystNote ?? ''}`.toLowerCase();
       if (!hay.includes(q)) continue;
     }
     out.push({ row, result });

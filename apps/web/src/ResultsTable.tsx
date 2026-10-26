@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createColumnHelper, flexRender, getCoreRowModel, getSortedRowModel, useReactTable, type SortingState, type VisibilityState } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { freshness, isFailure, type DisplayRow, type RawConfig } from '@zoning/core';
+import { freshness, isFailure, mapTypeOf, type DisplayRow, type RawConfig } from '@zoning/core';
+import { TypeBadge } from './components';
 
 const ROW_HEIGHT = 40;
 const col = createColumnHelper<DisplayRow>();
@@ -57,6 +58,15 @@ export function ResultsTable(props: {
         cell: (c) => (
           <a href={c.getValue()} target="_blank" rel="noreferrer" title={c.getValue()} onClick={(e) => e.stopPropagation()}>{c.getValue() || '(empty)'}</a>
         ),
+      }),
+      col.accessor((d) => {
+        const k = mapTypeOf(d.row, d.result);
+        return k.type === 'unknown' ? 'zz' : `${k.type}${String(9 - Math.min(9, k.pdfCount))}`; // sorts interactive maps, then PDFs by file count, unknown last
+      }, {
+        id: 'type',
+        header: 'Type',
+        size: 150,
+        cell: (c) => <TypeBadge row={c.row.original.row} result={c.row.original.result} />,
       }),
       col.accessor((d) => d.result?.status ?? 'zz', {
         id: 'status',

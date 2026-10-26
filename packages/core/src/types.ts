@@ -94,9 +94,13 @@ export interface CheckRow {
   fallback?: boolean;
   /** Header of the column the fallback link came from. */
   fallbackColumn?: string;
+  /** What the sheet's own type column says about this map ("PDF", "ArcGIS"), when the sheet has one. */
+  sheetType?: string;
   /** Shown with URL_EMPTY / URL_MALFORMED: what was looked for elsewhere in the row (a PDF is the usual reason a Map URL is empty). */
   hint?: string;
 }
+
+export type MapType = 'interactive' | 'pdf' | 'unknown';
 
 export interface CheckResult {
   id: string;
@@ -142,6 +146,12 @@ export interface CheckResult {
   fromCache?: boolean;
   /** The analyst pressed Mark as reviewed; reviewDate / reviewedAt are theirs, not the automatic check stamp. */
   manualReview?: boolean;
+  /** Interactive ArcGIS map or PDF. Results stored before this field existed lack it; see mapTypeOf(). */
+  mapType?: MapType;
+  /** PDF files behind the link: 1 for a PDF, the files a web page lists, or those a viewer links to. */
+  pdfCount?: number;
+  /** Up to 20 of those PDF links. */
+  pdfLinks?: string[];
   /** Where the check ran. `browser` = re-checked from the user's browser (e.g. behind a VPN). */
   via: 'server' | 'browser';
 }

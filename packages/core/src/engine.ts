@@ -8,7 +8,8 @@ import { earliest, fromEpochMs, isFuture, latest, localDate, parseDateStrings } 
 import type { HostBreaker } from './breaker';
 import { AbortedError, HttpError, type HttpClient, type HttpResponse } from './http';
 import { TOOL_VERSION } from './issues';
-import { findTextDates, isPdfContentType, isPdfUrl, looksLikePdf, parsePdfDate, pickTextDate, type PdfReader } from './pdf';
+import { typeFromUrl } from './maptype';
+import { findPdfLinks, findTextDates, isPdfContentType, isPdfUrl, looksLikePdf, parsePdfDate, pickTextDate, type PdfReader } from './pdf';
 import { extractRefs, itemDataUrl, itemFileUrl, itemUrl, portalBases, SERVICE_ITEM_TYPES, type ChildItem, type ServiceRef } from './portal';
 import type {
   CheckResult,
@@ -20,6 +21,7 @@ import type {
   IssueCode,
   IssueNote,
   LayerDetail,
+  MapType,
 } from './types';
 import { jsonUrl, normalizeUrl, type NormalizedUrl } from './url';
 
@@ -42,6 +44,8 @@ class Failure extends Error {
     public code: FailureCode,
     message: string,
     public retryAfterMs?: number,
+    /** A web page that links to PDF files: they are counted, not read. */
+    public pdfs?: string[],
   ) {
     super(message);
     this.name = 'Failure';
@@ -151,6 +155,11 @@ function interpret(res: HttpResponse): any {
     // A PDF where a service was expected: hand the response to the PDF reader instead of failing.
     if (res.bytes || isPdfContentType(res.headers['content-type'])) throw new PdfDetected(res);
     const html = /html/i.test(res.headers['content-type'] ?? '') || /^<(!doctype|html)/i.test(text);
+    const pdfs = html ? findPdfLinks(res.body, res.url) : [];
+    if (pdfs.length > 0) {
+      const sample = pdfs.slice(0, 3).map((u) => decodeURIComponent(u.split(/[?#]/)[0].split('/').pop() ?? u)).join(', ');
+      throw new Failure('NOT_ARCGIS', `The link is a web page, not ArcGIS data. It links to ${pdfs.length} PDF file${pdfs.length === 1 ? '' : 's'} (${sample}${pdfs.length > 3 ? ', …' : ''}). Paste the link of the PDF map itself to have its date read.`, undefined, pdfs);
+    }
     throw new Failure('NOT_ARCGIS', html ? 'The server returned a web page, not ArcGIS data. Find the REST endpoint (…/MapServer or …/FeatureServer).' : 'The server did not return JSON, so this is not an ArcGIS REST endpoint.');
   }
   return json;
@@ -559,6 +568,8 @@ interface Analysis {
   resolvedFrom?: string;
   /** The target was a PDF file (directly, or found inside a viewer item). */
   isPdf?: boolean;
+  /** PDF files found: the file itself, or those a viewer links to. */
+  pdfLinks?: string[];
   /** PDFs only: the date already chosen (text first, then document properties), replacing the ArcGIS pick. */
   primary?: DateEvidence | null;
   /** PDFs only: the PDF had no readable text, so no date could be found in it. */
@@ -657,8 +668,14 @@ async function analyseApp(ctx: Ctx, norm: Extract<NormalizedUrl, { ok: true }>):
 
   // A viewer whose map is a PDF (an ArcGIS "PDF" item, or a link to one in the app): read the PDF for its date.
   if (services.length === 0 && pdfs.length > 0) {
-    const a = await analysePdf(ctx, pdfs[0]);
-    return { ...a, resolvedFrom: `${trail.join(' → ')} → ${pdfs[0]}` };
+    let a: Analysis;
+    try {
+      a = await analysePdf(ctx, pdfs[0]);
+    } catch (err) {
+      if (err instanceof Failure && !err.pdfs) err.pdfs = pdfs; // unreadable, but still counted
+      throw err;
+    }
+    return { ...a, pdfLinks: pdfs, resolvedFrom: `${trail.join(' → ')} → ${pdfs[0]}` };
   }
   if (services.length === 0 && embedded > 0) {
     return {
@@ -700,6 +717,7 @@ async function analyseApp(ctx: Ctx, norm: Extract<NormalizedUrl, { ok: true }>):
     rootUrl: first.analysis.rootUrl,
     resolvedUrl: first.url,
     resolvedFrom: `${trail.join(' → ')} → ${first.url}`,
+    pdfLinks: pdfs,
   };
 }
 
@@ -817,7 +835,7 @@ async function analysePdf(ctx: Ctx, url: string, first?: HttpResponse): Promise<
   }
   if (primary && primary.kind === 'pdfProperty') warn(ctx, 'DATE_FROM_PDF_PROPERTIES', `No date is written in the PDF itself, so its document property ${primary.field} (${primary.date}) was used. That is when the file was saved, which can differ from when the map was last updated.`);
 
-  return { serviceType: 'PDF', isPdf: true, layers: [], rootUrl: url, resolvedUrl: evidenceUrl, primary, noText: content.text.trim().length < 20 };
+  return { serviceType: 'PDF', isPdf: true, pdfLinks: [evidenceUrl], layers: [], rootUrl: url, resolvedUrl: evidenceUrl, primary, noText: content.text.trim().length < 20 };
 }
 
 const dateOrNone = (e: DateEvidence | null) => (e ? e.date : 'None');
@@ -875,6 +893,12 @@ export async function checkMap(row: CheckRow, deps: EngineDeps): Promise<CheckRe
   issues.push(...ctx.warnings.filter((w) => !(failure && w.code === failure.code)));
   for (const pre of resultPreIssues(row)) if (!issues.some((i) => i.code === pre.code)) issues.push(pre);
 
+  // Interactive map or PDF, and how many PDF files sit behind the link.
+  const pdfLinks = [...(analysis?.isPdf ? analysis.pdfLinks ?? [] : failure?.pdfs ?? analysis?.pdfLinks ?? [])];
+  const mapType: MapType = analysis?.isPdf || (failure?.pdfs?.length ?? 0) > 0 ? 'pdf' : analysis ? 'interactive' : typeFromUrl(row.url);
+  if (mapType === 'pdf' && pdfLinks.length === 0 && isPdfUrl(row.url)) pdfLinks.push(row.url.trim()); // a PDF that could not be read is still one PDF
+  const pdfCount = mapType === 'pdf' ? Math.max(1, pdfLinks.length) : pdfLinks.length;
+
   const p = picked.primary;
   const none = 'None';
   const zoningLayer =
@@ -918,6 +942,9 @@ export async function checkMap(row: CheckRow, deps: EngineDeps): Promise<CheckRe
     retries: ctx.retries,
     checkedAt: now.toISOString(),
     toolVersion: TOOL_VERSION,
+    mapType,
+    pdfCount,
+    ...(pdfLinks.length ? { pdfLinks: pdfLinks.slice(0, 20) } : {}),
     via: deps.via ?? 'server',
   };
 }

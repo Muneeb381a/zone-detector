@@ -127,3 +127,24 @@ export function pickTextDate(dates: TextDate[]): TextDate | null {
   const labelled = dates.filter((d) => d.keyword);
   return newest(labelled.length ? labelled : dates);
 }
+
+/**
+ * The PDF files a web page links to (href / src attributes and bare addresses), resolved against the page
+ * address, without repeats. A city's "zoning maps" page often lists several.
+ */
+export function findPdfLinks(html: string, pageUrl: string, max = 20): string[] {
+  const found: string[] = [];
+  const add = (raw: string) => {
+    const cleaned = raw.replace(/&amp;/g, '&').trim();
+    if (!/\.pdf(?:$|[?#])/i.test(cleaned) || /^(javascript|mailto|data):/i.test(cleaned)) return;
+    try {
+      const abs = new URL(cleaned, pageUrl).toString();
+      if (!found.includes(abs)) found.push(abs);
+    } catch {
+      /* not an address */
+    }
+  };
+  for (const m of html.matchAll(/(?:href|src|data|content)\s*=\s*["']([^"']+)["']/gi)) add(m[1]);
+  for (const m of html.matchAll(/https?:\/\/[^\s"'<>)]+\.pdf(?:\?[^\s"'<>)]*)?/gi)) add(m[0]);
+  return found.slice(0, max);
+}

@@ -272,6 +272,7 @@ export function buildRows(table: string[][], mapping: ColumnMapping): BuildResul
       extra[h || `Column ${c + 1}`] = cleanCell(r[c]);
     });
 
+    const sheetType = typeCol === null ? '' : cell(r, typeCol);
     let urls = extractUrls(urlCell);
     let fallback = false;
     let fallbackColumn: string | undefined;
@@ -299,7 +300,7 @@ export function buildRows(table: string[][], mapping: ColumnMapping): BuildResul
       }
     }
     if (urls.length === 0) {
-      const type = typeCol === null ? '' : cell(r, typeCol);
+      const type = sheetType;
       const looked = fallbackCols.map((c) => headers[c] || `Column ${c + 1}`);
       hint = `${/pdf/i.test(type) ? 'The sheet marks this map as a PDF, but no PDF link' : 'No PDF or viewer link'} was found in this row${looked.length ? ` (looked in: ${looked.join(', ')})` : ''}. Paste the PDF or map link into the Map URL cell.`;
     }
@@ -316,6 +317,7 @@ export function buildRows(table: string[][], mapping: ColumnMapping): BuildResul
         fingerprint: fingerprint(city, state, url),
         preIssues: [],
         extra,
+        ...(sheetType ? { sheetType } : {}),
         ...(fallback ? { fallback: true, fallbackColumn } : {}),
         ...(hint ? { hint } : {}),
       });
