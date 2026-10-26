@@ -981,5 +981,18 @@ export function rebrandResult(r: CheckResult, row: CheckRow, now: Date, opts: { 
   };
 }
 
+/**
+ * A browser re-check that fails with CORS_BLOCKED learns nothing: the browser cannot say whether the server sends no
+ * CORS headers, is down, or blocks the browser's network too. It must not replace the server's specific error
+ * (TIMEOUT, 403, 404 …), so the server result is kept and the failed attempt is added as a note.
+ */
+export function mergeBrowserResult(prev: CheckResult | undefined, next: CheckResult): CheckResult {
+  if (!prev || next.via !== 'browser' || next.status !== 'CORS_BLOCKED' || prev.via === 'browser' || prev.status === 'CORS_BLOCKED') return next;
+  if (prev.browserTried) return prev;
+  const reason = 'Re-checking from your browser also failed: the server sends no CORS headers, or the browser’s network cannot reach it either. The error above is the server’s.';
+  const issues = [...prev.issues, { code: 'CORS_BLOCKED' as const, reason }];
+  return { ...prev, issues, issueReason: issues.map((i) => i.reason).join(' | '), browserTried: true };
+}
+
 /** Results worth keeping in the 24 h URL cache: the map loaded. Failures are usually temporary, so they are re-checked. */
 export const isCacheable = (r: CheckResult) => r.status === 'OK' || r.status === 'OK_NO_DATE';

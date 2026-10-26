@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
-  applyFilters, buildFullCsv, buildIssuesCsv, buildRows, buildSheetReadyCsv, isFailure, isNetworkPathIssue, localDate, normalizeName, suggestDateFields, summarize,
+  applyFilters, buildFullCsv, buildIssuesCsv, buildRows, buildSheetReadyCsv, isFailure, isNetworkPathIssue, localDate, mergeBrowserResult, normalizeName, suggestDateFields, summarize,
   type CheckResult, type CheckRow, type ColumnMapping, type DateFormat, type DisplayRow, type SyncMode } from '@zoning/core';
 import { addDateFields, ApiError, authStatus, controlRun, fetchConfig, loadState, openRunStream, saveResults, signOutGoogle, syncRows, syncSheet, type RunStream } from './api';
 import { recheckInBrowser, type BrowserCheckHandle } from './browserCheck';
@@ -315,8 +315,9 @@ export function App() {
       dispatch({ type: 'browserProgress', patch: { total: rows.length, done: 0, running: true } });
       const handle = recheckInBrowser(rows, st.config, {
         result: (r: CheckResult) => {
-          dispatch({ type: 'results', list: [r] });
-          markDirty([r.id]);
+          const merged = mergeBrowserResult(stateRef.current.results[r.id], r);
+          dispatch({ type: 'results', list: [merged] });
+          markDirty([merged.id]);
         },
         progress: (stats) => dispatch({ type: 'browserProgress', patch: { done: stats.completed, total: stats.total } }),
       });
@@ -329,7 +330,7 @@ export function App() {
   // Maps the server could not reach (timeouts, connection refused, 401/403, DNS, SSL): the user's browser,
   // on its own route/VPN, often can. These are re-checked from the browser — automatically when enabled.
   const networkBlockedIds = useMemo(
-    () => s.rows.filter((r) => s.results[r.id] && s.results[r.id].via !== 'browser' && isNetworkPathIssue(s.results[r.id].status)).map((r) => r.id),
+    () => s.rows.filter((r) => s.results[r.id] && s.results[r.id].via !== 'browser' && !s.results[r.id].browserTried && isNetworkPathIssue(s.results[r.id].status)).map((r) => r.id),
     [s.rows, s.results],
   );
 

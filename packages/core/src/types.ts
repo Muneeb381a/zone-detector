@@ -152,6 +152,8 @@ export interface CheckResult {
   pdfCount?: number;
   /** Up to 20 of those PDF links. */
   pdfLinks?: string[];
+  /** The browser re-check was tried and also failed; the server's result stands. */
+  browserTried?: boolean;
   /** Where the check ran. `browser` = re-checked from the user's browser (e.g. behind a VPN). */
   via: 'server' | 'browser';
 }
