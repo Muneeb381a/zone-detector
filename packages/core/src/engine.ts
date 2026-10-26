@@ -816,10 +816,25 @@ async function analysePdf(ctx: Ctx, url: string, first?: HttpResponse): Promise<
   const textDates = findTextDates(content.text, ctx.now);
   const chosenText = pickTextDate(textDates);
   let primary: DateEvidence | null = null;
+  const mod0 = parsePdfDate(content.info.modDate);
+  const created0 = parsePdfDate(content.info.creationDate);
   for (const t of textDates.slice(0, 12)) {
     const isChosen = t === chosenText;
-    const label = t.keyword ? `PDF:text (${t.keyword})` : 'PDF:text';
-    const ev = push(t.date, `${t.date}T00:00:00.000Z`, label, 'pdfText', t.keyword ? 'high' : 'medium', isChosen, t.keyword);
+    let label = t.keyword ? `PDF:text (${t.keyword})` : 'PDF:text';
+    let date = t.date;
+    let iso = `${t.date}T00:00:00.000Z`;
+    if (isChosen && t.format === 'month-year') {
+      // The text names only a month ("September 2026"). The file's own saved date, when it falls in that month, gives the day.
+      const same = [mod0, created0].find((d) => d && d.date.slice(0, 7) === t.date.slice(0, 7));
+      if (same) {
+        date = same.date;
+        iso = same.iso;
+        label += ' + day from file date';
+      } else {
+        warn(ctx, 'AMBIGUOUS_FORMAT', `The PDF states only the month ("${t.snippet}"), so the 1st of that month was used.`);
+      }
+    }
+    const ev = push(date, iso, label, 'pdfText', t.keyword ? 'high' : 'medium', isChosen, t.keyword);
     if (isChosen) primary = ev;
   }
   if (chosenText?.ambiguous) warn(ctx, 'AMBIGUOUS_FORMAT', `The date "${chosenText.snippet}" was read as month/day/year. If the city writes day/month/year, it is a different date.`);

@@ -63,10 +63,23 @@ export interface TextDate {
 
 const KEYWORD_RE = /(last\s+(?:revised|updated|modified|amended|edited)|revis(?:ed|ion)(?:\s+date)?|updated?|amended|amendment|adopted|adoption|effective(?:\s+date)?|as\s+of|date\s+(?:printed|prepared|published|created|issued)|printed|prepared|published|dated?|rev\.?)\W{0,3}(?:on\W{0,3})?(?:through\W{0,3})?$/i;
 
+/** The same words, found anywhere in a stretch of text (the label need not touch the date). */
+const KEYWORD_ANY = new RegExp(KEYWORD_RE.source.replace(/\\W\{0,3\}\(\?:on[^$]*\$$/, ''), 'gi');
+
+/**
+ * The label a date sits behind. Either the label touches the date ("Revised 03/14/2024"), or it comes a few words
+ * earlier in the same sentence ("Zoning Map updated per Ordinance O2026-17 - September 2026"; a line break in
+ * between does not matter). A sentence end or a blank line cuts the search, and so does another date.
+ */
 function keywordBefore(text: string, index: number): string | undefined {
-  const before = text.slice(Math.max(0, index - 36), index);
-  const m = KEYWORD_RE.exec(before);
-  return m ? m[1].replace(/\s+/g, ' ').trim() : undefined;
+  const near = KEYWORD_RE.exec(text.slice(Math.max(0, index - 36), index));
+  if (near) return near[1].replace(/\s+/g, ' ').trim();
+  let win = text.slice(Math.max(0, index - 90), index);
+  win = win.slice(Math.max(win.lastIndexOf('. ') + 2, win.lastIndexOf('\n\n') + 2, 0)).replace(/\s+/g, ' ');
+  if (/\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{4}-\d{2}-\d{2}/.test(win)) win = win.slice(win.search(/\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{4}-\d{2}-\d{2}/) + 1);
+  let last: string | undefined;
+  for (const m of win.matchAll(KEYWORD_ANY)) last = m[1];
+  return last ? last.replace(/\s+/g, ' ').trim() : undefined;
 }
 
 /**
