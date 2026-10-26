@@ -189,7 +189,7 @@ export function TypeBadge({ row, result }: { row: CheckRow; result?: CheckResult
   const sheet = k.mismatch ? ` The sheet\u2019s type column says ${k.sheetType === 'pdf' ? 'PDF' : 'ArcGIS'}.` : '';
   const files = pdf ? (k.pdfCount > 1 ? `${k.pdfCount} PDF files behind this link.` : '1 PDF file.') : k.pdfCount > 0 ? `This viewer also links to ${k.pdfCount} PDF file${k.pdfCount === 1 ? '' : 's'}.` : '';
   return (
-    <span className={`type-badge ${pdf ? 'pdf' : 'map'}`} title={`${k.label}. ${files} ${how}${sheet}`.replace(/\s+/g, ' ').trim()}>
+    <span className={`type-badge ${pdf ? 'is-pdf' : 'is-map'}`} title={`${k.label}. ${files} ${how}${sheet}`.replace(/\s+/g, ' ').trim()}>
       <TypeIcon d={pdf ? PDF_ICON : MAP_ICON} />
       {pdf ? 'PDF' : 'Interactive map'}
       {pdf && k.pdfCount > 1 && <b className="type-count">×{k.pdfCount}</b>}
@@ -209,10 +209,10 @@ export function TypeSummary(props: { rows: CheckRow[]; results: Record<string, C
   return (
     <div className="issue-summary type-summary" role="group" aria-label="Map types">
       <span className="issue-summary-label">Map types</span>
-      <button className={`type-chip map ${props.active === 'interactive' ? 'on' : ''}`} onClick={() => pick('interactive')} aria-pressed={props.active === 'interactive'} title="Show interactive ArcGIS maps only"><TypeIcon d={MAP_ICON} /> Interactive <b>{s.interactive.toLocaleString()}</b></button>
-      <button className={`type-chip pdf ${props.active === 'pdf' ? 'on' : ''}`} onClick={() => pick('pdf')} aria-pressed={props.active === 'pdf'} title="Show PDF maps only"><TypeIcon d={PDF_ICON} /> PDF <b>{s.pdf.toLocaleString()}</b><span className="type-files">{s.pdfFiles.toLocaleString()} file{s.pdfFiles === 1 ? '' : 's'}</span></button>
-      {s.unknown > 0 && <span className="type-chip other" title="Rows whose link is neither an ArcGIS address nor a PDF">Unknown <b>{s.unknown.toLocaleString()}</b></span>}
-      {s.mismatches > 0 && <span className="type-chip warn" title={`The sheet’s type column and the link disagree: ${differing.slice(0, 8).join('; ')}${differing.length > 8 ? '; …' : ''}`}>⚠ {s.mismatches.toLocaleString()} differ from the sheet</span>}
+      <button className={`type-chip is-map ${props.active === 'interactive' ? 'on' : ''}`} onClick={() => pick('interactive')} aria-pressed={props.active === 'interactive'} title="Show interactive ArcGIS maps only"><TypeIcon d={MAP_ICON} /> Interactive <b>{s.interactive.toLocaleString()}</b></button>
+      <button className={`type-chip is-pdf ${props.active === 'pdf' ? 'on' : ''}`} onClick={() => pick('pdf')} aria-pressed={props.active === 'pdf'} title="Show PDF maps only"><TypeIcon d={PDF_ICON} /> PDF <b>{s.pdf.toLocaleString()}</b><span className="type-files">{s.pdfFiles.toLocaleString()} file{s.pdfFiles === 1 ? '' : 's'}</span></button>
+      {s.unknown > 0 && <span className="type-chip is-other" title="Rows whose link is neither an ArcGIS address nor a PDF">Unknown <b>{s.unknown.toLocaleString()}</b></span>}
+      {s.mismatches > 0 && <span className="type-chip is-warn" title={`The sheet’s type column and the link disagree: ${differing.slice(0, 8).join('; ')}${differing.length > 8 ? '; …' : ''}`}>⚠ {s.mismatches.toLocaleString()} differ from the sheet</span>}
     </div>
   );
 }
