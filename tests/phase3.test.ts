@@ -215,8 +215,8 @@ describe('Issues-only CSV', () => {
 describe('fallback link column', () => {
   const t = parseCsv('City,State,REST,Viewer\nA,TX,,https://city.maps.arcgis.com/apps/instant/index.html?appid=0123456789abcdef0123456789abcdef\nB,TX,https://b.gov/x/MapServer,https://v.arcgis.com/apps/x?id=0123456789abcdef0123456789abcdef\nC,TX,,\nD,TX,coming soon,https://d.maps.arcgis.com/home/item.html?id=0123456789abcdef0123456789abcdef');
 
-  it('is off unless chosen', () => {
-    const r = buildRows(t, { city: 0, state: 1, county: null, url: 2 });
+  it('can be turned off', () => {
+    const r = buildRows(t, { city: 0, state: 1, county: null, url: 2, altUrl: null });
     expect(r.rows.map((x) => x.url)).toEqual(['', 'https://b.gov/x/MapServer', '', 'coming soon']);
     expect(r.rows.some((x) => x.fallback)).toBe(false);
   });
@@ -230,8 +230,15 @@ describe('fallback link column', () => {
     expect(r.rows[3].url).toContain('home/item.html'); // text with no link is replaced too
   });
 
-  it('suggestMapping does not turn it on by itself', () => {
-    expect(suggestMapping(['City', 'State', 'REST', 'Viewer']).altUrl ?? null).toBeNull();
+  it('is automatic when no column is chosen: the Viewer column is found by itself', () => {
+    const r = buildRows(t, { city: 0, state: 1, county: null, url: 2 });
+    expect(r.rows.map((x) => x.fallback ?? false)).toEqual([true, false, false, true]);
+    expect(r.rows[0].fallbackColumn).toBe('Viewer');
+    expect(r.rows[2].hint).toMatch(/No PDF or viewer link/);
+  });
+
+  it('suggestMapping leaves it automatic (undefined), not switched off', () => {
+    expect(suggestMapping(['City', 'State', 'REST', 'Viewer']).altUrl).toBeUndefined();
   });
 });
 

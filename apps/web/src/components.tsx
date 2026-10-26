@@ -262,14 +262,18 @@ export function MappingPanel(props: { s: State; onChange(m: ColumnMapping): void
         {FIELDS.map(([key, label]) => (
           <label key={key}>
             {label}
-            <select value={sheet.mapping[key] ?? ''} onChange={(e) => props.onChange({ ...sheet.mapping, [key]: e.target.value === '' ? null : Number(e.target.value) })}>
-              <option value="">(none)</option>
+            <select
+              value={key === 'altUrl' ? (sheet.mapping.altUrl === undefined ? 'auto' : sheet.mapping.altUrl ?? '') : sheet.mapping[key] ?? ''}
+              onChange={(e) => props.onChange({ ...sheet.mapping, [key]: e.target.value === 'auto' ? undefined : e.target.value === '' ? null : Number(e.target.value) })}
+            >
+              {key === 'altUrl' && <option value="auto">(automatic: PDF or viewer link in another column)</option>}
+              <option value="">{key === 'altUrl' ? '(off)' : '(none)'}</option>
               {headers.map((h, i) => <option key={i} value={i}>{h || `Column ${i + 1}`}</option>)}
             </select>
           </label>
         ))}
       </div>
-      <p className="muted small">Your choice is remembered for this sheet. Rows whose City, State and link did not change keep their stored result. The fallback column is optional: a viewer link there is resolved to its map when the Map URL cell is empty.</p>
+      <p className="muted small">Your choice is remembered for this sheet. Rows whose City, State and link did not change keep their stored result. When the Map URL cell is empty (usually a PDF map), the row’s other link columns are searched automatically: a PDF link is read for its date, a viewer link is resolved to its map.</p>
     </TrayItem>
   );
 }
@@ -361,6 +365,7 @@ export function PrimaryDateCard(props: {
   onMark(advance: boolean): void;
   onRecheck(id: string): void;
   rechecking: boolean;
+  onGeoPackage(id: string): void;
 }) {
   const { item, config, index, total } = props;
   const r = item?.result;
@@ -398,6 +403,7 @@ export function PrimaryDateCard(props: {
             <button className="primary" onClick={() => props.onMark(false)} title="Stamp today's date as the review date after looking at the map">{r.manualReview ? 'Reviewed ✓' : 'Mark reviewed'}</button>
             <button onClick={() => props.onMark(true)} title="Mark reviewed, then open the next map">Mark &amp; next</button>
             <button className="small" onClick={() => props.onRecheck(item.row.id)} disabled={props.rechecking || !config} title="Check this map from your browser (use with the browser VPN on)">Re-check in browser</button>
+            <button className="small gpkg-btn" onClick={() => props.onGeoPackage(item.row.id)} disabled={r?.serviceType === 'PDF' || !item.row.url.trim()} title={r?.serviceType === 'PDF' ? 'This map is a PDF, not an ArcGIS service' : 'Download this map\u2019s data as a GeoPackage (.gpkg)'}>Download GeoPackage</button>
           </div>
         </>
       )}
@@ -510,7 +516,7 @@ function IssuesTab({ r, row }: { r: CheckResult; row: CheckRow }) {
       <dl className="facts">
         <dt>Link</dt><dd className="break small"><a href={row.url} target="_blank" rel="noreferrer">{row.url || '(empty)'}</a></dd>
         {r.resolvedFrom && (<><dt>Resolved from</dt><dd className="break small">{r.resolvedFrom}</dd></>)}
-        {row.fallback && (<><dt>Link taken from</dt><dd>the fallback column</dd></>)}
+        {row.fallback && (<><dt>Link taken from</dt><dd>{row.fallbackColumn ? `column “${row.fallbackColumn}” (Map URL was empty)` : 'the fallback column'}</dd></>)}
         {r.itemModifiedDate !== 'None' && (<><dt>Portal item date</dt><dd>{r.itemModifiedDate} <span className="muted small">low confidence</span></dd></>)}
         <dt>Requests</dt><dd>{r.responseTimeMs} ms · {r.retries} retr{r.retries === 1 ? 'y' : 'ies'}{r.fromCache ? ' · 24 h cache' : ''} · {r.via}</dd>
         {r.zoningLayerName && (<><dt>Zoning layer</dt><dd>{r.zoningLayerName}</dd></>)}

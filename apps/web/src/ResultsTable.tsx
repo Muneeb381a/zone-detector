@@ -18,14 +18,34 @@ export function ResultsTable(props: {
   onOrder(ids: string[]): void;
   /** Rendered at the left of the toolbar row (the filters), next to the Columns menu. */
   toolbar?: ReactNode;
+  /** Rows ticked for download. */
+  picked: Set<string>;
+  onPick(ids: string[], on: boolean): void;
+  /** Open the GeoPackage download for these rows. */
+  onGeoPackage(ids: string[]): void;
 }) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ reviewer: false });
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { onPatch, freshnessCfg } = props;
+  const { onPatch, freshnessCfg, picked, onPick } = props;
 
   const columns = useMemo(
     () => [
+      col.display({
+        id: 'pick',
+        size: 34,
+        enableSorting: false,
+        enableHiding: false,
+        header: ({ table }) => {
+          const ids = table.getRowModel().rows.map((r) => r.id);
+          const all = ids.length > 0 && ids.every((id) => picked.has(id));
+          return <input type="checkbox" aria-label="Select all rows shown" checked={all} onChange={(e) => onPick(ids, e.target.checked)} />;
+        },
+        cell: (c) => {
+          const id = c.row.original.row.id;
+          return <input type="checkbox" aria-label={`Select row ${id}`} checked={picked.has(id)} onClick={(e) => e.stopPropagation()} onChange={(e) => onPick([id], e.target.checked)} />;
+        },
+      }),
       col.accessor((d) => d.row.sheetRow, { id: 'row', header: 'Row', size: 48, cell: (c) => c.row.original.row.id }),
       col.accessor((d) => d.row.city, { id: 'city', header: 'City', size: 120 }),
       col.accessor((d) => d.row.state, { id: 'state', header: 'State', size: 54 }),
@@ -88,7 +108,7 @@ export function ResultsTable(props: {
         },
       }),
     ],
-    [onPatch, freshnessCfg],
+    [onPatch, freshnessCfg, picked, onPick],
   );
 
   const table = useReactTable({ data: props.data, columns, state: { sorting, columnVisibility }, onSortingChange: setSorting, onColumnVisibilityChange: setColumnVisibility, getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(), getRowId: (d) => d.row.id });
@@ -111,10 +131,19 @@ export function ResultsTable(props: {
     <div className="rt-toolbar">
       {props.toolbar}
       {!props.toolbar && <div className="spacer" />}
+      <details className="menu gpkg-menu">
+        <summary className="button small" title="Download the map data (not the dates) as a GeoPackage file">GeoPackage{picked.size > 0 ? ` (${picked.size})` : ''} ▾</summary>
+        <div className="menu-pop" role="menu">
+          <button role="menuitem" disabled={picked.size === 0} onClick={(e) => { props.onGeoPackage([...picked]); (e.currentTarget.closest('details') as HTMLDetailsElement).open = false; }}>Download selected maps <span className="muted small">{picked.size}</span></button>
+          <button role="menuitem" disabled={rows.length === 0} onClick={(e) => { props.onGeoPackage(rows.map((r) => r.id)); (e.currentTarget.closest('details') as HTMLDetailsElement).open = false; }}>Download all shown <span className="muted small">{rows.length}</span></button>
+          <button role="menuitem" disabled={picked.size === 0} onClick={(e) => { onPick([...picked], false); (e.currentTarget.closest('details') as HTMLDetailsElement).open = false; }}>Clear selection</button>
+          <div className="menu-opt">Tick rows in the first column to choose several maps. All their layers go into one file.</div>
+        </div>
+      </details>
       <details className="menu col-menu">
         <summary className="button small">Columns ▾</summary>
         <div className="menu-pop" role="menu" aria-label="Toggle columns">
-          {table.getAllLeafColumns().map((c) => (
+          {table.getAllLeafColumns().filter((c) => c.getCanHide()).map((c) => (
             <label key={c.id}>
               <input type="checkbox" checked={c.getIsVisible()} onChange={c.getToggleVisibilityHandler()} />
               {typeof c.columnDef.header === 'string' ? c.columnDef.header : c.id}

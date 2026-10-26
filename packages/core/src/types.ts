@@ -90,8 +90,12 @@ export interface CheckRow {
   preIssues: IssueNote[];
   /** Every original cell, keyed by header. */
   extra: Record<string, string>;
-  /** The link came from the optional fallback column because the Map URL cell had none. */
+  /** The link came from another column because the Map URL cell had none. */
   fallback?: boolean;
+  /** Header of the column the fallback link came from. */
+  fallbackColumn?: string;
+  /** Shown with URL_EMPTY / URL_MALFORMED: what was looked for elsewhere in the row (a PDF is the usual reason a Map URL is empty). */
+  hint?: string;
 }
 
 export interface CheckResult {

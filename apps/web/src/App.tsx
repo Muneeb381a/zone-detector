@@ -1,10 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   applyFilters, buildFullCsv, buildIssuesCsv, buildRows, buildSheetReadyCsv, isFailure, isNetworkPathIssue, localDate, normalizeName, suggestDateFields, summarize,
-  type CheckResult, type CheckRow, type ColumnMapping, type DateFormat, type SyncMode,
-} from '@zoning/core';
+  type CheckResult, type CheckRow, type ColumnMapping, type DateFormat, type DisplayRow, type SyncMode } from '@zoning/core';
 import { addDateFields, ApiError, authStatus, controlRun, fetchConfig, loadState, openRunStream, saveResults, signOutGoogle, syncRows, syncSheet, type RunStream } from './api';
 import { recheckInBrowser, type BrowserCheckHandle } from './browserCheck';
+import { GeoPackageDialog } from './GeoPackageDialog';
 import { BrandBar, CityPanel, DetailTabs, FreshnessLegend, IssueSummary, MappingPanel, PrimaryDateCard, RemovedPanel, RunControls, SheetPanel, SummaryCards, TrayItem } from './components';
 import { FilterBar } from './FilterBar';
 import { ExportMenu, GoogleBar, PreviewCopyDialog, SuggestionsPanel, ThemeToggle, WriteBackDialog } from './Phase3Panels';
@@ -377,6 +377,13 @@ export function App() {
     setTab('results');
   };
   const hasRows = s.rows.length > 0;
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [geoRows, setGeoRows] = useState<DisplayRow[] | null>(null);
+  const rowsForIds = (ids: string[]): DisplayRow[] => {
+    const want = new Set(ids);
+    return s.rows.filter((r) => want.has(r.id)).map((row) => ({ row, result: s.results[row.id] }));
+  };
+  const pickRows = useCallback((ids: string[], on: boolean) => setPicked((p) => { const n = new Set(p); ids.forEach((id) => (on ? n.add(id) : n.delete(id))); return n; }), []);
 
   const active = s.stats?.state === 'running' || s.stats?.state === 'paused';
 
@@ -470,7 +477,7 @@ export function App() {
               <p className="muted">Share the sheet as “Anyone with the link can view”, or sign in with Google for a private one. Results are saved as they arrive, so closing the tab or restarting the server loses nothing.</p>
             </div>
           ) : tab === 'results' ? (
-            <ResultsTable toolbar={<FilterBar rows={s.rows} results={s.results} filters={s.filters} onChange={(patch) => dispatch({ type: 'filters', patch })} shown={display.length} />} data={display} selectedId={s.selectedId} onSelect={select} onPatch={patchResult} freshnessCfg={s.config?.freshness} onOrder={setOrder} />
+            <ResultsTable toolbar={<FilterBar rows={s.rows} results={s.results} filters={s.filters} onChange={(patch) => dispatch({ type: 'filters', patch })} shown={display.length} />} data={display} selectedId={s.selectedId} onSelect={select} onPatch={patchResult} freshnessCfg={s.config?.freshness} onOrder={setOrder} picked={picked} onPick={pickRows} onGeoPackage={(ids) => setGeoRows(rowsForIds(ids))} />
           ) : (
             <CityPanel rows={s.rows} results={s.results} selectedCity={s.filters.city} onPick={(key) => { dispatch({ type: 'filters', patch: { city: key, card: 'all' } }); if (key) setTab('results'); }} />
           )}
@@ -520,10 +527,11 @@ export function App() {
           </section>
           <div className="bottom-row">
             <DetailTabs item={selected} config={s.config} onPatch={(p) => s.selectedId && patchResult(s.selectedId, p)} />
-            <PrimaryDateCard item={selected} config={s.config} index={navIndex} total={navIds.length} onPrev={() => step(-1)} onNext={() => step(1)} onMark={markReviewed} onRecheck={(id) => recheckBrowser([id])} rechecking={!!s.browserCheck?.running} />
+            <PrimaryDateCard item={selected} config={s.config} index={navIndex} total={navIds.length} onPrev={() => step(-1)} onNext={() => step(1)} onMark={markReviewed} onRecheck={(id) => recheckBrowser([id])} rechecking={!!s.browserCheck?.running} onGeoPackage={(id) => setGeoRows(rowsForIds([id]))} />
           </div>
         </div>
       </div>
+      {geoRows && <GeoPackageDialog rows={geoRows} onClose={() => setGeoRows(null)} />}
       {writeBackOpen && s.sheetKey && <WriteBackDialog sheetKey={s.sheetKey} dateFormat={dateFormat} onDateFormat={setDateFormat} onClose={() => setWriteBackOpen(false)} />}
       {previewOpen && s.sheet && <PreviewCopyDialog table={s.sheet.table} rows={s.rows} results={s.results} dateFormat={dateFormat} mapping={s.sheet.mapping} onDateFormat={setDateFormat} onClose={() => setPreviewOpen(false)} />}
     </div>

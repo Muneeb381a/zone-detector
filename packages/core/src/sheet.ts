@@ -91,8 +91,9 @@ export interface ColumnMapping {
   county: number | null;
   url: number | null;
   /**
-   * Optional second link column, used only for rows whose Map URL cell holds no link
-   * (e.g. a viewer link when the REST endpoint is missing). Off by default.
+   * Link column used only for rows whose Map URL cell holds no link (a viewer link, or the PDF that a city
+   * publishes instead of an ArcGIS service). `undefined` = automatic: the sheet's other link columns are
+   * searched, a PDF link first; `null` = off; a number = that column.
    */
   altUrl?: number | null;
 }
@@ -177,6 +178,45 @@ export function extractUrls(cell: string): string[] {
   return out;
 }
 
+const PDF_LINK = /\.pdf(?:$|[?#])/i;
+const hasPdfLink = (urls: string[]) => urls.find((u) => PDF_LINK.test(u));
+
+/**
+ * The columns searched when a row has no Map URL and no fallback column was chosen: columns that hold links,
+ * viewer/map-link columns first (they also resolve to a map), then PDF / future-land-use / document columns,
+ * then any other column with links.
+ */
+export function autoFallbackColumns(table: string[][], mapping: ColumnMapping): number[] {
+  const headers = (table[0] ?? []).map(cleanCell);
+  const taken = new Set([mapping.city, mapping.state, mapping.county, mapping.url].filter((x): x is number => x != null));
+  const rank = (h: string): number => {
+    const n = norm(h);
+    if (/tml|maplink|viewer|webmap|webapp|interactive/.test(n)) return 0;
+    if (/pdf|flum|document|plan|ordinance|code/.test(n)) return 1;
+    return /link|url/.test(n) ? 2 : 3;
+  };
+  const cols: { c: number; r: number }[] = [];
+  headers.forEach((h, c) => {
+    if (taken.has(c)) return;
+    if (!table.slice(1).some((r) => CELL_URL.test(r[c] ?? ''))) return;
+    const r = rank(h);
+    if (r <= 2) cols.push({ c, r }); // columns with an unrelated header (emails, notes) are not searched for a map
+  });
+  return cols.sort((a, b) => a.r - b.r || a.c - b.c).map((x) => x.c);
+}
+
+/** The sheet's own "type" column (values like PDF / ArcGIS), found by its header ("PDF: 2 | AG: 98") or its values. */
+function findTypeColumn(table: string[][]): number | null {
+  const headers = (table[0] ?? []).map(cleanCell);
+  const byHeader = headers.findIndex((h) => /\bpdf\s*:\s*\d+/i.test(h) && /\b(ag|arcgis)\s*:\s*\d+/i.test(h));
+  if (byHeader >= 0) return byHeader;
+  for (let c = 0; c < headers.length; c++) {
+    const vals = new Set(table.slice(1).map((r) => cleanCell(r[c]).toLowerCase()).filter(Boolean));
+    if (vals.size > 0 && vals.size <= 6 && vals.has('pdf') && [...vals].every((v) => ['pdf', 'arcgis', 'ag', 'image', 'i', 'unknown', 'u', 'other'].includes(v))) return c;
+  }
+  return null;
+}
+
 /** Small 53-bit string hash, synchronous so it also runs in the browser. */
 export function hashString(str: string): string {
   let h1 = 0xdeadbeef;
@@ -211,6 +251,8 @@ export function buildRows(table: string[][], mapping: ColumnMapping): BuildResul
   const headers = (table[0] ?? []).map(cleanCell);
   const cell = (r: string[], i: number | null) => (i === null ? '' : cleanCell(r[i]));
   const rows: CheckRow[] = [];
+  const typeCol = findTypeColumn(table);
+  const fallbackCols = mapping.altUrl === null ? [] : mapping.altUrl !== undefined ? [mapping.altUrl] : autoFallbackColumns(table, mapping);
   let blankDropped = 0;
   let split = 0;
 
@@ -232,12 +274,34 @@ export function buildRows(table: string[][], mapping: ColumnMapping): BuildResul
 
     let urls = extractUrls(urlCell);
     let fallback = false;
-    if (urls.length === 0 && mapping.altUrl != null) {
-      const alt = extractUrls(cell(r, mapping.altUrl));
-      if (alt.length > 0) {
-        urls = alt;
+    let fallbackColumn: string | undefined;
+    let hint: string | undefined;
+    if (urls.length === 0 && mapping.altUrl !== null) {
+      // A Map URL that is empty is usually a PDF map. Look in the row's other link columns: a PDF link wins,
+      // otherwise the first viewer / map link (it is resolved to its map like any other).
+      const found = fallbackCols.map((c) => ({ c, urls: extractUrls(cell(r, c)) })).filter((x) => x.urls.length > 0);
+      const withPdf = found.find((x) => hasPdfLink(x.urls));
+      const pick = withPdf ?? found[0];
+      if (pick) {
+        urls = withPdf ? [hasPdfLink(pick.urls)!] : pick.urls;
         fallback = true;
+        fallbackColumn = headers[pick.c] || `Column ${pick.c + 1}`;
+      } else if (mapping.altUrl === undefined) {
+        // Last resort when no link column exists: any cell in the row holding a link to a PDF.
+        for (let c = 0; c < headers.length && !fallback; c++) {
+          const pdf = c === mapping.url ? undefined : hasPdfLink(extractUrls(cell(r, c)));
+          if (pdf) {
+            urls = [pdf];
+            fallback = true;
+            fallbackColumn = headers[c] || `Column ${c + 1}`;
+          }
+        }
       }
+    }
+    if (urls.length === 0) {
+      const type = typeCol === null ? '' : cell(r, typeCol);
+      const looked = fallbackCols.map((c) => headers[c] || `Column ${c + 1}`);
+      hint = `${/pdf/i.test(type) ? 'The sheet marks this map as a PDF, but no PDF link' : 'No PDF or viewer link'} was found in this row${looked.length ? ` (looked in: ${looked.join(', ')})` : ''}. Paste the PDF or map link into the Map URL cell.`;
     }
     if (urls.length === 0) urls = [urlCell]; // let normalizeUrl decide: empty -> URL_EMPTY, "N/A" -> URL_MALFORMED, bare domain -> ok
     if (urls.length > 1) split += urls.length - 1;
@@ -252,7 +316,8 @@ export function buildRows(table: string[][], mapping: ColumnMapping): BuildResul
         fingerprint: fingerprint(city, state, url),
         preIssues: [],
         extra,
-        ...(fallback ? { fallback: true } : {}),
+        ...(fallback ? { fallback: true, fallbackColumn } : {}),
+        ...(hint ? { hint } : {}),
       });
     });
   }

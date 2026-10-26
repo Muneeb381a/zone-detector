@@ -1,11 +1,12 @@
 /** Reads a PDF with pdf.js (via unpdf): the text of the first pages, and the document properties. */
-import { extractText, getDocumentProxy } from 'unpdf';
 import type { PdfContent, PdfReader } from '@zoning/core';
 
 /** Zoning maps are one big sheet or a short atlas; dates sit on the first pages (title block) or the last (revision list). */
 const MAX_PAGES = 6;
 
 export const readPdf: PdfReader = async (bytes): Promise<PdfContent> => {
+  // Loaded on first use: pdf.js takes seconds to load and most runs never meet a PDF.
+  const { extractText, getDocumentProxy } = await import('unpdf');
   // pdf.js takes ownership of the buffer it is given, so hand it a copy.
   const pdf = await getDocumentProxy(new Uint8Array(bytes));
   try {

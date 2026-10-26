@@ -66,6 +66,45 @@ export async function fetchConfig(): Promise<{ config: RawConfig; upstreamProxy:
   return res.json();
 }
 
+export interface PlannedLayer {
+  id: number;
+  name: string;
+  geometryType: string | null;
+  exportable: boolean;
+  zoning: boolean;
+  selected: boolean;
+  note?: string;
+}
+export interface PlannedMap {
+  rowId?: string;
+  city: string;
+  state: string;
+  url: string;
+  layers: PlannedLayer[];
+  error?: string;
+}
+export interface ExportItem {
+  rowId?: string;
+  city: string;
+  state?: string;
+  url: string;
+  layerIds?: number[];
+}
+export interface ExportStatus {
+  id: string;
+  state: 'running' | 'done' | 'error' | 'cancelled';
+  error: string;
+  progress: { layersTotal: number; layersDone: number; features: number; layerTotal: number | null; layerFeatures: number; current: string };
+  layers: { map: string; layer: string; table?: string; features: number; skipped: number; truncated: boolean; error?: string }[];
+  filename: string;
+  bytes: number;
+}
+export const planExport = (items: ExportItem[]) => call<{ maps: PlannedMap[] }>('POST', '/api/exports/plan', { items });
+export const startExport = (items: ExportItem[]) => call<{ id: string }>('POST', '/api/exports', { items });
+export const getExport = (id: string) => call<ExportStatus>('GET', `/api/exports/${id}`);
+export const cancelExport = (id: string) => call<ExportStatus>('POST', `/api/exports/${id}/cancel`);
+export const exportFileUrl = (id: string) => `/api/exports/${id}/file`;
+
 export interface RunStream {
   close(): void;
 }

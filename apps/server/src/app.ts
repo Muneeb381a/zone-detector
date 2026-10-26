@@ -28,6 +28,8 @@ import { Store } from './db';
 import { columnLetter, GoogleAuth, readTab, writeColumns, type GoogleOptions } from './google';
 import { createHttpClient } from './http-client';
 import { RunRegistry } from './runs';
+import { createReadStream } from 'node:fs';
+import { exportDir, ExportRegistry, MAX_MAPS_PER_EXPORT, planExport, type ExportItem } from './exports';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '../../..');
@@ -71,6 +73,7 @@ export function buildApp(opts: AppOptions = {}): FastifyInstance {
   const configPath = opts.configPath ?? DEFAULT_CONFIG_PATH;
   const store = new Store(opts.dbPath ?? DEFAULT_DB_PATH);
   const runs = new RunRegistry();
+  const exports = new ExportRegistry();
   const auth = new GoogleAuth({
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -93,7 +96,18 @@ export function buildApp(opts: AppOptions = {}): FastifyInstance {
     if (!client) clients.set(key, (client = createHttpClient(o)));
     return client;
   };
+  // Feature downloads are far larger than service descriptions, so they get their own size limit.
+  const EXPORT_MAX_BYTES = 120 * 1024 * 1024;
+  const exportHttp = (c: Config): HttpClient => {
+    if (opts.http) return opts.http;
+    const o = { connectMs: c.timeouts.connectMs, totalMs: Math.max(c.timeouts.totalMs, 180_000), maxBytes: EXPORT_MAX_BYTES, allowPrivateHosts: opts.allowPrivateHosts, upstreamProxy: opts.upstreamProxy ?? process.env.UPSTREAM_PROXY };
+    const key = `export:${JSON.stringify(o)}`;
+    let client = clients.get(key);
+    if (!client) clients.set(key, (client = createHttpClient(o)));
+    return client;
+  };
   app.addHook('onClose', async () => {
+    await exports.closeAll();
     for (const c of clients.values()) await (c as { close?: () => Promise<void> }).close?.();
     store.close();
   });
@@ -329,6 +343,65 @@ export function buildApp(opts: AppOptions = {}): FastifyInstance {
       clearInterval(heartbeat);
       unsubscribe();
     });
+  });
+
+  // ---- GeoPackage export ---------------------------------------------------------
+  const cleanItems = (body: unknown): ExportItem[] | string => {
+    const raw = (body as { items?: unknown })?.items;
+    if (!Array.isArray(raw) || raw.length === 0) return 'Choose at least one map.';
+    if (raw.length > MAX_MAPS_PER_EXPORT) return `At most ${MAX_MAPS_PER_EXPORT} maps can be downloaded at once.`;
+    const items: ExportItem[] = [];
+    for (const r of raw as Partial<ExportItem>[]) {
+      if (!r || typeof r.url !== 'string' || !r.url.trim()) return 'Every map needs a link.';
+      items.push({
+        rowId: typeof r.rowId === 'string' ? r.rowId : undefined,
+        city: String(r.city ?? '').slice(0, 120) || 'Map',
+        state: r.state ? String(r.state).slice(0, 40) : undefined,
+        url: r.url.trim(),
+        layerIds: Array.isArray(r.layerIds) ? r.layerIds.map(Number).filter((n) => Number.isInteger(n) && n >= 0).slice(0, 40) : undefined,
+      });
+    }
+    return items;
+  };
+
+  // Which layers each map has and which look like zoning (they start selected).
+  app.post('/api/exports/plan', async (req, reply) => {
+    const items = cleanItems(req.body);
+    if (typeof items === 'string') return reply.code(400).send({ error: items });
+    const c = config().resolved;
+    return { maps: await planExport(items, exportHttp(c), c) };
+  });
+
+  app.post('/api/exports', async (req, reply) => {
+    const items = cleanItems(req.body);
+    if (typeof items === 'string') return reply.code(400).send({ error: items });
+    const c = config().resolved;
+    const job = exports.create({ items, http: exportHttp(c), config: c, dir: exportDir() });
+    if (!job) return reply.code(429).send({ error: 'Two downloads are already running. Wait for one to finish.' });
+    return reply.code(202).send({ id: job.id });
+  });
+
+  app.get<{ Params: { id: string } }>('/api/exports/:id', async (req, reply) => {
+    const job = exports.get(req.params.id);
+    if (!job) return reply.code(404).send({ error: 'Unknown or expired download.' });
+    return job.summary;
+  });
+
+  app.post<{ Params: { id: string } }>('/api/exports/:id/cancel', async (req, reply) => {
+    const job = exports.get(req.params.id);
+    if (!job) return reply.code(404).send({ error: 'Unknown or expired download.' });
+    job.cancel();
+    return job.summary;
+  });
+
+  app.get<{ Params: { id: string } }>('/api/exports/:id/file', async (req, reply) => {
+    const job = exports.get(req.params.id);
+    if (!job || job.state !== 'done') return reply.code(404).send({ error: 'The file is not ready, or it has expired. Start the download again.' });
+    return reply
+      .header('content-type', 'application/geopackage+sqlite3')
+      .header('content-length', job.bytes)
+      .header('content-disposition', `attachment; filename="${job.filename}"`)
+      .send(createReadStream(job.path));
   });
 
   return app;

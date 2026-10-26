@@ -1,6 +1,6 @@
 /** PDF maps: the date written in the text wins; otherwise the document properties (ModDate, then CreationDate). */
 import { describe, expect, it } from 'vitest';
-import { checkMap, findTextDates, isPdfUrl, parsePdfDate, pickTextDate, type CheckRow, type HttpResponse } from '@zoning/core';
+import { buildRows, checkMap, findTextDates, isPdfUrl, parseCsv, parsePdfDate, pickTextDate, type CheckRow, type HttpResponse } from '@zoning/core';
 import { readPdf } from '../apps/server/src/pdf';
 import { fixedNow, MockHttp, testConfig } from './helpers';
 
@@ -110,5 +110,72 @@ describe('checkMap on a PDF', () => {
     const res = await checkMap(row('https://city.gov/zoning.pdf'), { http: new MockHttp([[/./, () => pdfReply(makePdf(['x']))]]), config: testConfig(), now: fixedNow });
     expect(res.status).toBe('NOT_ARCGIS');
     expect(res.issueReason).toMatch(/server only/);
+  });
+});
+
+describe('a viewer whose map is a PDF', () => {
+  const APP = '0123456789abcdef0123456789abcdef';
+  const pdf = makePdf(['Zoning Map', 'Last Revised: 02/11/2024']);
+  const portal = (item: object, data: object | null) =>
+    new MockHttp([
+      [new RegExp(`items/${APP}\\?f=json`), () => ({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: APP, title: 'Zoning', ...item }), url: '', ms: 1 })],
+      [new RegExp(`items/${APP}/data\\?f=json`), () => ({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify(data ?? {}), url: '', ms: 1 })],
+      [new RegExp(`items/${APP}/data$`), () => pdfReply(pdf)],
+      [/zoning\.pdf/, () => pdfReply(pdf)],
+    ]);
+  const check = (http: MockHttp) => checkMap(row(`https://city.maps.arcgis.com/apps/instant/media/index.html?appid=${APP}`), { http, config: testConfig(), now: fixedNow, pdf: readPdf });
+
+  it('reads an ArcGIS item of type PDF', async () => {
+    const res = await check(portal({ type: 'PDF', modified: 1700000000000 }, null));
+    expect(res.status).toBe('OK');
+    expect(res.serviceType).toBe('PDF');
+    expect(res.primaryDate).toBe('2024-02-11');
+  });
+  it('reads a PDF linked from the app data when there is no service', async () => {
+    const res = await check(portal({ type: 'Web Mapping Application', modified: 1700000000000 }, { values: { documents: ['https://city.gov/files/zoning.pdf'] } }));
+    expect(res.status).toBe('OK');
+    expect(res.primaryDate).toBe('2024-02-11');
+    expect(res.resolvedFrom).toContain('zoning.pdf');
+  });
+});
+
+describe('an empty Map URL is looked for in the other columns of the row', () => {
+  const csv = [
+    'City,State,TML: 3 | NMF: 0,Endpoint_Links,Type PDF: 1 | AG: 2',
+    'A,TX,https://city.maps.arcgis.com/apps/instant/index.html?appid=0123456789abcdef0123456789abcdef,,PDF',
+    'B,TX,https://b.gov/viewer,,PDF',
+    'C,TX,https://c.gov/atlas/zoning-map.pdf,,PDF',
+    'D,TX,,,AG',
+    'E,TX,https://e.gov/viewer,https://e.gov/x/MapServer,AG',
+  ].join('\n');
+  const table = parseCsv(csv);
+  const mapping = { city: 0, state: 1, county: null, url: 3 };
+
+  it('takes the viewer link, or better a PDF link, and says which column it came from', () => {
+    const r = buildRows(table, mapping).rows;
+    expect(r.map((x) => x.url)).toEqual([
+      'https://city.maps.arcgis.com/apps/instant/index.html?appid=0123456789abcdef0123456789abcdef',
+      'https://b.gov/viewer',
+      'https://c.gov/atlas/zoning-map.pdf',
+      '',
+      'https://e.gov/x/MapServer', // its own endpoint wins
+    ]);
+    expect(r[2]).toMatchObject({ fallback: true, fallbackColumn: expect.stringContaining('TML') });
+    expect(r[4].fallback).toBeUndefined();
+  });
+  it('when nothing is found, URL_EMPTY says what was looked at, and uses the sheet\'s own PDF label', async () => {
+    const t2 = parseCsv('City,State,Type PDF: 1 | AG: 1,Endpoint_Links\nA,TX,PDF,\nB,TX,AG,');
+    const [a, b] = buildRows(t2, { city: 0, state: 1, county: null, url: 3 }).rows;
+    expect(a.hint).toMatch(/marks this map as a PDF/);
+    expect(b.hint).toMatch(/No PDF or viewer link/);
+    const res = await checkMap(a, { http: new MockHttp([]), config: testConfig(), now: fixedNow });
+    expect(res.status).toBe('URL_EMPTY');
+    expect(res.issueReason).toMatch(/Map URL cell is empty.*marks this map as a PDF/);
+  });
+  it('the PDF found in another column is then read for its date', async () => {
+    const [, , c] = buildRows(table, mapping).rows;
+    const res = await checkMap(c, { http: new MockHttp([[/zoning-map\.pdf/, () => pdfReply(makePdf(['Adopted June 5, 2022']))]]), config: testConfig(), now: fixedNow, pdf: readPdf });
+    expect(res.status).toBe('OK');
+    expect(res.primaryDate).toBe('2022-06-05');
   });
 });

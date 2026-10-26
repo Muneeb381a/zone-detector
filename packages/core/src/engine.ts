@@ -9,7 +9,7 @@ import type { HostBreaker } from './breaker';
 import { AbortedError, HttpError, type HttpClient, type HttpResponse } from './http';
 import { TOOL_VERSION } from './issues';
 import { findTextDates, isPdfContentType, isPdfUrl, looksLikePdf, parsePdfDate, pickTextDate, type PdfReader } from './pdf';
-import { extractRefs, itemDataUrl, itemUrl, portalBases, SERVICE_ITEM_TYPES, type ChildItem, type ServiceRef } from './portal';
+import { extractRefs, itemDataUrl, itemFileUrl, itemUrl, portalBases, SERVICE_ITEM_TYPES, type ChildItem, type ServiceRef } from './portal';
 import type {
   CheckResult,
   CheckRow,
@@ -557,6 +557,8 @@ interface Analysis {
   resolvedUrl?: string;
   /** For viewer links: the chain of portal items followed, e.g. `Web Mapping Application "X" → Web Map "Y"`. */
   resolvedFrom?: string;
+  /** The target was a PDF file (directly, or found inside a viewer item). */
+  isPdf?: boolean;
   /** PDFs only: the date already chosen (text first, then document properties), replacing the ArcGIS pick. */
   primary?: DateEvidence | null;
   /** PDFs only: the PDF had no readable text, so no date could be found in it. */
@@ -604,6 +606,7 @@ async function analyseApp(ctx: Ctx, norm: Extract<NormalizedUrl, { ok: true }>):
   const queue: (ChildItem & { depth: number })[] = [{ id: norm.itemId, strong: true, depth: 0 }];
   const visited = new Set<string>();
   const services: ServiceRef[] = [];
+  const pdfs: string[] = [];
   const trail: string[] = [];
   let embedded = 0;
   let goodBase: string | undefined;
@@ -625,7 +628,7 @@ async function analyseApp(ctx: Ctx, norm: Extract<NormalizedUrl, { ok: true }>):
     trail.push(`${item.type} "${item.title ?? next.id}"`);
 
     let data: unknown = null;
-    if (!SERVICE_ITEM_TYPES.has(item.type)) {
+    if (!SERVICE_ITEM_TYPES.has(item.type) && item.type !== 'PDF') {
       try {
         data = await requestJson(ctx, itemDataUrl(base, next.id));
       } catch (e) {
@@ -633,6 +636,7 @@ async function analyseApp(ctx: Ctx, norm: Extract<NormalizedUrl, { ok: true }>):
       }
     }
     const refs = extractRefs(item, data);
+    for (const u of item.type === 'PDF' ? [itemFileUrl(base, next.id)] : refs.pdfs) if (!pdfs.includes(u)) pdfs.push(u);
     let direct = refs.services;
     if (norm.hubLayer !== undefined && SERVICE_ITEM_TYPES.has(item.type)) {
       direct = direct.map((s) => (/\/\d+$/.test(s.url) ? s : { ...s, url: `${s.url}/${norm.hubLayer}` }));
@@ -651,6 +655,11 @@ async function analyseApp(ctx: Ctx, norm: Extract<NormalizedUrl, { ok: true }>):
     if (next.depth < MAX_PORTAL_DEPTH) for (const c of refs.children) queue.push({ ...c, depth: next.depth + 1 });
   }
 
+  // A viewer whose map is a PDF (an ArcGIS "PDF" item, or a link to one in the app): read the PDF for its date.
+  if (services.length === 0 && pdfs.length > 0) {
+    const a = await analysePdf(ctx, pdfs[0]);
+    return { ...a, resolvedFrom: `${trail.join(' → ')} → ${pdfs[0]}` };
+  }
   if (services.length === 0 && embedded > 0) {
     return {
       serviceType: 'App → web map (data stored inside the map)',
@@ -808,7 +817,7 @@ async function analysePdf(ctx: Ctx, url: string, first?: HttpResponse): Promise<
   }
   if (primary && primary.kind === 'pdfProperty') warn(ctx, 'DATE_FROM_PDF_PROPERTIES', `No date is written in the PDF itself, so its document property ${primary.field} (${primary.date}) was used. That is when the file was saved, which can differ from when the map was last updated.`);
 
-  return { serviceType: 'PDF', layers: [], rootUrl: url, resolvedUrl: evidenceUrl, primary, noText: content.text.trim().length < 20 };
+  return { serviceType: 'PDF', isPdf: true, layers: [], rootUrl: url, resolvedUrl: evidenceUrl, primary, noText: content.text.trim().length < 20 };
 }
 
 const dateOrNone = (e: DateEvidence | null) => (e ? e.date : 'None');
@@ -823,7 +832,7 @@ export async function checkMap(row: CheckRow, deps: EngineDeps): Promise<CheckRe
   let analysis: Analysis | null = null;
 
   if (!norm.ok) {
-    failure = new Failure(norm.code, norm.reason);
+    failure = new Failure(norm.code, row.hint ? `${norm.reason} ${row.hint}` : norm.reason);
   } else if (deps.breaker?.isOpen(norm.host)) {
     failure = new Failure('HOST_UNREACHABLE', deps.breaker.describe(norm.host));
   } else {
@@ -844,7 +853,7 @@ export async function checkMap(row: CheckRow, deps: EngineDeps): Promise<CheckRe
   }
 
   const zoningLayers = new Set((analysis?.layers ?? []).filter((l) => l.zoningScore > 0).map((l) => l.name));
-  const picked = analysis?.serviceType === 'PDF'
+  const picked = analysis?.isPdf
     ? { primary: analysis.primary ?? null, attrMax: null, attrMin: null, editing: null }
     : pickPrimary(ctx.dates, deps.config.datePriority, deps.config.dateSelection, zoningLayers);
   const otherDateFields = unique((analysis?.layers ?? []).flatMap((l) => l.otherDateFields.map((f) => `${l.name}.${f}`)));
@@ -858,7 +867,7 @@ export async function checkMap(row: CheckRow, deps: EngineDeps): Promise<CheckRe
     const extra = otherDateFields.length ? ` Other date fields exist (${otherDateFields.slice(0, 4).join(', ')}${otherDateFields.length > 4 ? ', …' : ''}); see Other Date Fields Found.` : '';
     issues.push({
       code: 'OK_NO_DATE',
-      reason: analysis?.serviceType === 'PDF'
+      reason: analysis?.isPdf
         ? `The PDF loaded, but no date was found in its text or its document properties.${analysis.noText ? ' It has no readable text, so it may be a scanned image.' : ''}`
         : `The map loaded, but no date was found in the service metadata or attributes.${extra}`,
     });

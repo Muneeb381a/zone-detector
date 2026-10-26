@@ -68,15 +68,18 @@ export function portalBases(appUrl: string): string[] {
 
 export const itemUrl = (base: string, id: string) => `${base}/sharing/rest/content/items/${id}?f=json`;
 export const itemDataUrl = (base: string, id: string) => `${base}/sharing/rest/content/items/${id}/data?f=json`;
+/** The file behind an item of type PDF. */
+export const itemFileUrl = (base: string, id: string) => `${base}/sharing/rest/content/items/${id}/data`;
 
 const titleOf = (o: any): string => String(o?.title ?? o?.name ?? o?.label ?? '');
 
 /** Service URLs and child item ids found in an item (and its data JSON). */
-export function extractRefs(item: any, data: any): { services: ServiceRef[]; children: ChildItem[]; embedded: number } {
+export function extractRefs(item: any, data: any): { services: ServiceRef[]; children: ChildItem[]; embedded: number; pdfs: string[] } {
   const from = String(item?.id ?? '');
   /** Layers whose data is stored inside the web map itself (feature collections): there is no service to ask. */
   let embedded = 0;
   const services: ServiceRef[] = [];
+  const pdfs: string[] = [];
   const children = new Map<string, boolean>();
   const seen = new Set<string>();
 
@@ -85,6 +88,9 @@ export function extractRefs(item: any, data: any): { services: ServiceRef[]; chi
     if (!SERVICE_URL.test(clean) || isBasemapUrl(clean) || seen.has(clean.toLowerCase())) return;
     seen.add(clean.toLowerCase());
     services.push({ url: clean, title, from });
+  };
+  const addPdf = (url: string) => {
+    if (/^https?:\/\//i.test(url) && /\.pdf(?:$|[?#])/i.test(url) && !pdfs.includes(url)) pdfs.push(url);
   };
   const addChild = (id: string, strong: boolean) => {
     if (!HEX32.test(id) || id.toLowerCase() === from.toLowerCase()) return;
@@ -97,7 +103,10 @@ export function extractRefs(item: any, data: any): { services: ServiceRef[]; chi
   const walk = (node: unknown, parentTitle: string, depth: number) => {
     if (depth > 14 || node === null || typeof node !== 'object') return;
     if (Array.isArray(node)) {
-      for (const n of node) walk(n, parentTitle, depth + 1);
+      for (const n of node) {
+        if (typeof n === 'string') addPdf(n); // a list of plain links, e.g. documents: ["…/zoning.pdf"]
+        else walk(n, parentTitle, depth + 1);
+      }
       return;
     }
     const obj = node as Record<string, unknown>;
@@ -109,12 +118,15 @@ export function extractRefs(item: any, data: any): { services: ServiceRef[]; chi
         continue;
       }
       if (typeof value === 'string') {
-        if (/^https?:\/\//i.test(value)) addService(value, title);
+        if (/^https?:\/\//i.test(value)) {
+          addService(value, title);
+          addPdf(value);
+        }
         else if (STRONG_KEYS.test(key)) addChild(value, true);
         else if (key === 'itemId') addChild(value, false);
       } else walk(value, title, depth + 1);
     }
   };
   walk(data, '', 0);
-  return { services, children: [...children].map(([id, strong]) => ({ id, strong })), embedded };
+  return { services, children: [...children].map(([id, strong]) => ({ id, strong })), embedded, pdfs };
 }
