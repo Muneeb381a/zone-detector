@@ -32,6 +32,7 @@ export const ISSUE_INFO: Record<IssueCode, IssueInfo> = {
   DATE_SENTINEL_IGNORED: { meaning: 'A placeholder date was ignored', action: 'Review' },
   DATE_IN_FUTURE: { meaning: 'A date after today was found', action: 'Review; may be a genuine effective date' },
   AMBIGUOUS_FORMAT: { meaning: 'A text date could not be read unambiguously', action: 'Review' },
+  DATE_FROM_OTHER_LINK: { meaning: 'The Map URL is dead; the date comes from another link in the row', action: 'Replace the Map URL in the sheet with the working link' },
   DATE_FROM_PDF_PROPERTIES: { meaning: 'PDF has no date in its text; its document property date was used', action: 'Review; the file save date can differ from the map date' },
   MAP_RENDER_FAILED: { meaning: 'Data ok, viewer could not draw tiles', action: 'Open the endpoint directly' },
   HOST_UNREACHABLE: { meaning: 'Server failed repeatedly, so the rest of its maps were skipped', action: 'Use Re-check failed to retry; if the city blocks non-US traffic, re-check through a VPN' },
@@ -40,7 +41,7 @@ export const ISSUE_INFO: Record<IssueCode, IssueInfo> = {
 };
 
 export function isWarning(code: IssueCode): boolean {
-  return code === 'DUPLICATE_URL' || code === 'DATE_SENTINEL_IGNORED' || code === 'DATE_IN_FUTURE' || code === 'AMBIGUOUS_FORMAT' || code === 'DATE_FROM_PDF_PROPERTIES';
+  return code === 'DUPLICATE_URL' || code === 'DATE_SENTINEL_IGNORED' || code === 'DATE_IN_FUTURE' || code === 'AMBIGUOUS_FORMAT' || code === 'DATE_FROM_PDF_PROPERTIES' || code === 'DATE_FROM_OTHER_LINK';
 }
 
 /**

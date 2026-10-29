@@ -5,6 +5,7 @@ export type FailureCode =
   | 'HTTP_404'
   | 'HTTP_410'
   | 'HTTP_401_403'
+  | 'DATE_FROM_OTHER_LINK'
   | 'TOKEN_REQUIRED'
   | 'HTTP_429'
   | 'HTTP_5XX'
@@ -94,6 +95,8 @@ export interface CheckRow {
   fallback?: boolean;
   /** Header of the column the fallback link came from. */
   fallbackColumn?: string;
+  /** Other links in the same row (TML / viewer / PDF columns), tried when the Map URL itself is dead. */
+  altUrls?: { url: string; column: string }[];
   /** The sheet's own ID for this city (the "City ID" / "IDs" column), exactly as written. */
   cityId?: string;
   /** What the sheet's own type column says about this map ("PDF", "ArcGIS"), when the sheet has one. */

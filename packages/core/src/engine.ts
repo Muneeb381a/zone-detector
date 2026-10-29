@@ -855,7 +855,28 @@ async function analysePdf(ctx: Ctx, url: string, first?: HttpResponse): Promise<
 
 const dateOrNone = (e: DateEvidence | null) => (e ? e.date : 'None');
 
+/** Link problems where the Map URL is dead but another link in the same row may still work. */
+const DEAD_LINK = new Set<IssueCode>(['HTTP_404', 'HTTP_410', 'SERVICE_STOPPED', 'URL_MALFORMED', 'URL_EMPTY', 'NOT_ARCGIS', 'ARCGIS_ERROR']);
+
+/**
+ * Check a row. When its Map URL is dead (404, removed, stopped, malformed) the row's other links (the TML / viewer
+ * column, PDF and FLUM columns) are tried, and the first one that gives a date supplies it. The dead link is still
+ * reported, as a note, so the sheet's Map URL gets fixed.
+ */
 export async function checkMap(row: CheckRow, deps: EngineDeps): Promise<CheckResult> {
+  const first = await checkOne(row, deps);
+  if (!DEAD_LINK.has(first.status) || !row.altUrls?.length) return first;
+  for (const alt of row.altUrls.slice(0, 3)) {
+    const r = await checkOne({ ...row, url: alt.url, altUrls: undefined, hint: undefined, preIssues: [] }, deps);
+    if (r.status !== 'OK') continue;
+    const note = { code: 'DATE_FROM_OTHER_LINK' as const, reason: `The Map URL did not work (${first.issueReason}). The date comes from "${alt.column}" (${alt.url}) in the same row. Fix the Map URL in the sheet.` };
+    const issues = [...r.issues, ...first.issues.filter((i) => i.code !== 'OK_NO_DATE'), note];
+    return { ...r, sourceUrl: row.url, issues, issueReason: issues.map((i) => i.reason).join(' | '), retries: r.retries + first.retries };
+  }
+  return first;
+}
+
+async function checkOne(row: CheckRow, deps: EngineDeps): Promise<CheckResult> {
   const now = (deps.now ?? (() => new Date()))();
   const ctx: Ctx = { deps, now, retries: 0, ms: 0, lastUrl: '', warnings: [], dates: [] };
   const norm = normalizeUrl(row.url);

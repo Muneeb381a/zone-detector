@@ -334,6 +334,12 @@ export function buildRows(table: string[][], mapping: ColumnMapping): BuildResul
         }
       }
     }
+    const altUrls: { url: string; column: string }[] = [];
+    if (mapping.altUrl !== null) {
+      for (const c of fallbackCols) {
+        for (const u of extractUrls(cell(r, c))) if (!urls.includes(u) && !altUrls.some((a) => a.url === u)) altUrls.push({ url: u, column: headers[c] || `Column ${c + 1}` });
+      }
+    }
     if (urls.length === 0) {
       const type = sheetType;
       const looked = fallbackCols.map((c) => headers[c] || `Column ${c + 1}`);
@@ -356,6 +362,7 @@ export function buildRows(table: string[][], mapping: ColumnMapping): BuildResul
         ...(sheetType ? { sheetType } : {}),
         ...(fallback ? { fallback: true, fallbackColumn } : {}),
         ...(hint ? { hint } : {}),
+        ...(altUrls.length ? { altUrls: altUrls.filter((a) => a.url !== url) } : {}),
       });
     });
   }
@@ -375,9 +382,9 @@ export function refreshRowFields(saved: CheckRow[], table: string[][] | null | u
   return saved.map((row) => {
     const f = fresh.get(row.id);
     if (!f || f.fingerprint !== row.fingerprint) return row;
-    const { cityId, sheetType, hint, fallback, fallbackColumn } = f;
-    const next = { ...row, cityId, sheetType, hint, fallback: fallback ?? row.fallback, fallbackColumn };
-    for (const k of ['cityId', 'sheetType', 'hint', 'fallbackColumn'] as const) if (next[k] === undefined) delete next[k];
+    const { cityId, sheetType, hint, fallback, fallbackColumn, altUrls } = f;
+    const next = { ...row, cityId, sheetType, hint, fallback: fallback ?? row.fallback, fallbackColumn, altUrls };
+    for (const k of ['cityId', 'sheetType', 'hint', 'fallbackColumn', 'altUrls'] as const) if (next[k] === undefined) delete next[k];
     return next;
   });
 }
