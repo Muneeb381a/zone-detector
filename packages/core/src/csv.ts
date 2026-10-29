@@ -1,5 +1,6 @@
 /** Focused CSV exports. UTF-8 with BOM, RFC 4180 quoting, ISO dates. */
 import { isFailure, isLinkIssue } from './issues';
+import { findIdColumn, type ColumnMapping } from './sheet';
 import type { CheckResult, CheckRow, IssueNote } from './types';
 
 export const FULL_CSV_COLUMNS = [
@@ -276,16 +277,14 @@ export function buildCopyTable(
   table: string[][],
   rows: CheckRow[],
   results: Record<string, CheckResult>,
-  mapping: { city: number | null; state: number | null; county: number | null },
+  mapping: { city: number | null; state: number | null; county: number | null; url?: number | null; altUrl?: number | null; id?: number | null },
   fmt: DateFormat = 'iso',
 ): string[][] {
   const header = table[0] ?? [];
   const mapped = new Set([mapping.city, mapping.state, mapping.county]);
   // The sheet's own ID column: the "City ID" header first, then an exact "id" header, else any header that starts or ends with "id" (City ID, ID_No),
   // else the column just left of the City column when nothing else claims it (IDs normally lead the sheet).
-  let idIdx = findColumn(header, ['cityid', 'id', 'mapid', 'recordid']);
-  if (idIdx < 0) idIdx = header.findIndex((h, i) => !mapped.has(i) && /^id|id$/.test(normHeader(h)) && normHeader(h) !== 'valid');
-  if (idIdx < 0 && mapping.city !== null && mapping.city > 0 && !mapped.has(mapping.city - 1)) idIdx = mapping.city - 1;
+  const idIdx = findIdColumn(table, { ...mapping, url: (mapping as ColumnMapping).url ?? null, id: (mapping as ColumnMapping).id });
   const oldIdx = findColumn(header, ['olddate']);
   const newIdx = findColumn(header, ['newdate']);
   const matrix = buildWriteBackMatrix(table, rows, results, fmt);

@@ -281,6 +281,7 @@ const FIELDS: [keyof ColumnMapping, string][] = [
   ['county', 'County'],
   ['url', 'Map URL'],
   ['altUrl', 'Fallback link (used only when Map URL has none)'],
+  ['id', 'City ID (the sheet\u2019s own ID)'],
 ];
 
 export function MappingPanel(props: { s: State; onChange(m: ColumnMapping): void }) {
@@ -306,10 +307,11 @@ export function MappingPanel(props: { s: State; onChange(m: ColumnMapping): void
           <label key={key}>
             {label}
             <select
-              value={key === 'altUrl' ? (sheet.mapping.altUrl === undefined ? 'auto' : sheet.mapping.altUrl ?? '') : sheet.mapping[key] ?? ''}
+              value={key === 'altUrl' || key === 'id' ? (sheet.mapping[key] === undefined ? 'auto' : sheet.mapping[key] ?? '') : sheet.mapping[key] ?? ''}
               onChange={(e) => props.onChange({ ...sheet.mapping, [key]: e.target.value === 'auto' ? undefined : e.target.value === '' ? null : Number(e.target.value) })}
             >
               {key === 'altUrl' && <option value="auto">(automatic: PDF or viewer link in another column)</option>}
+              {key === 'id' && <option value="auto">(automatic: the ID column)</option>}
               <option value="">{key === 'altUrl' ? '(off)' : '(none)'}</option>
               {headers.map((h, i) => <option key={i} value={i}>{h || `Column ${i + 1}`}</option>)}
             </select>
@@ -557,6 +559,7 @@ function IssuesTab({ r, row }: { r: CheckResult; row: CheckRow }) {
   return (
     <>
       <dl className="facts">
+        {row.cityId && (<><dt>City ID</dt><dd>{row.cityId}</dd></>)}
         <dt>Link</dt><dd className="break small"><a href={row.url} target="_blank" rel="noreferrer">{row.url || '(empty)'}</a></dd>
         {(() => {
           const k = mapTypeOf(row, r);

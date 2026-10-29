@@ -48,6 +48,7 @@ export function ResultsTable(props: {
         },
       }),
       col.accessor((d) => d.row.sheetRow, { id: 'row', header: 'Row', size: 48, cell: (c) => c.row.original.row.id }),
+      col.accessor((d) => d.row.cityId ?? '', { id: 'cityId', header: 'City ID', size: 76, cell: (c) => (c.getValue() ? <span className="td-id" title={`The sheet\u2019s own ID: ${c.getValue()}`}>{c.getValue()}</span> : <span className="muted">—</span>) }),
       col.accessor((d) => d.row.city, { id: 'city', header: 'City', size: 120 }),
       col.accessor((d) => d.row.state, { id: 'state', header: 'State', size: 54 }),
       col.accessor((d) => d.row.url, {

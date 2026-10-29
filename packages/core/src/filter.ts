@@ -70,7 +70,7 @@ export function applyFilters(rows: CheckRow[], results: Record<string, CheckResu
       if (f.olderThanYears && ageYears(d, now) <= f.olderThanYears) continue;
     }
     if (q) {
-      const hay = `${kind.label} ${kind.type} ${row.city} ${row.state} ${row.county} ${row.url} ${st ?? 'pending'} ${result?.issues.map((i) => i.code).join(' ') ?? ''} ${result?.issueReason ?? ''} ${result?.primaryDate ?? ''} ${result?.reviewer ?? ''} ${result?.analystNote ?? ''}`.toLowerCase();
+      const hay = `${row.cityId ?? ''} ${kind.label} ${kind.type} ${row.city} ${row.state} ${row.county} ${row.url} ${st ?? 'pending'} ${result?.issues.map((i) => i.code).join(' ') ?? ''} ${result?.issueReason ?? ''} ${result?.primaryDate ?? ''} ${result?.reviewer ?? ''} ${result?.analystNote ?? ''}`.toLowerCase();
       if (!hay.includes(q)) continue;
     }
     out.push({ row, result });

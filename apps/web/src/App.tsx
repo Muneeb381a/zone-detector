@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
-  applyFilters, buildFullCsv, buildIssuesCsv, buildRows, buildSheetReadyCsv, isFailure, isNetworkPathIssue, localDate, mergeBrowserResult, normalizeName, suggestDateFields, summarize,
+  applyFilters, buildFullCsv, buildIssuesCsv, buildRows, buildSheetReadyCsv, isFailure, isNetworkPathIssue, localDate, mergeBrowserResult, normalizeName, refreshRowFields, suggestDateFields, summarize,
   type CheckResult, type CheckRow, type ColumnMapping, type DateFormat, type DisplayRow, type SyncMode } from '@zoning/core';
 import { addDateFields, ApiError, authStatus, controlRun, fetchConfig, loadState, openRunStream, saveResults, signOutGoogle, syncRows, syncSheet, type RunStream } from './api';
 import { recheckInBrowser, type BrowserCheckHandle } from './browserCheck';
@@ -100,7 +100,7 @@ export function App() {
           if (!st) return;
           const [sheetId, gid] = key.split(':');
           const sheet = st.table && st.mapping ? { sheetId, gid, table: st.table, mapping: st.mapping } : null;
-          dispatch({ type: 'loaded', rows: st.rows, results: st.results, removed: st.removed, syncedAt: st.syncedAt, sheetKey: key, sheet });
+          dispatch({ type: 'loaded', rows: refreshRowFields(st.rows, st.table, st.mapping), results: st.results, removed: st.removed, syncedAt: st.syncedAt, sheetKey: key, sheet });
         })
         .catch(() => undefined);
     }

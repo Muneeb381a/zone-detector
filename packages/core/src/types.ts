@@ -94,6 +94,8 @@ export interface CheckRow {
   fallback?: boolean;
   /** Header of the column the fallback link came from. */
   fallbackColumn?: string;
+  /** The sheet's own ID for this city (the "City ID" / "IDs" column), exactly as written. */
+  cityId?: string;
   /** What the sheet's own type column says about this map ("PDF", "ArcGIS"), when the sheet has one. */
   sheetType?: string;
   /** Shown with URL_EMPTY / URL_MALFORMED: what was looked for elsewhere in the row (a PDF is the usual reason a Map URL is empty). */

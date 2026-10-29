@@ -96,6 +96,10 @@ export interface ColumnMapping {
    * searched, a PDF link first; `null` = off; a number = that column.
    */
   altUrl?: number | null;
+  /**
+   * The sheet's own City ID column. `undefined` = automatic (see findIdColumn), `null` = none, a number = that column.
+   */
+  id?: number | null;
 }
 
 // Headers are sometimes decorated with counts ("183 - Cities"); drop the count so the name still matches.
@@ -178,6 +182,35 @@ export function extractUrls(cell: string): string[] {
   return out;
 }
 
+const ID_SYNONYMS = ['cityid', 'id', 'ids', 'mapid', 'recordid', 'municipalityid', 'jurisdictionid', 'placeid', 'gisid', 'cityids', 'idno', 'idnumber'];
+const NOT_ID = /^(valid|paid|grid|guid|rapid|solid|fluid|humid|void|android|covid)s?$/;
+
+/**
+ * Where the sheet keeps its own City ID. A chosen column wins; otherwise: a header that is "ID" / "City ID" / "IDs"
+ * (a count in front or behind, as in "100 - IDs" or "ID (100)", is ignored), then any header ending in ID (Map_ID),
+ * then the column just left of the City column, where IDs normally sit. -1 when there is none.
+ */
+export function findIdColumn(table: string[][], mapping: ColumnMapping): number {
+  if (mapping.id === null) return -1;
+  if (mapping.id !== undefined) return mapping.id;
+  const headers = (table[0] ?? []).map(cleanCell);
+  const taken = new Set([mapping.city, mapping.state, mapping.county, mapping.url, mapping.altUrl].filter((x): x is number => x != null));
+  const keys = headers.map((h) => norm(h).replace(/\d+$/, ''));
+  for (const syn of ID_SYNONYMS) {
+    const i = keys.findIndex((k, c) => k === syn && !taken.has(c));
+    if (i >= 0) return i;
+  }
+  const ends = keys.findIndex((k, c) => !taken.has(c) && k.length > 2 && /ids?$/.test(k) && !NOT_ID.test(k));
+  if (ends >= 0) return ends;
+  const left = mapping.city;
+  if (left != null && left > 0 && !taken.has(left - 1)) {
+    const vals = table.slice(1).map((r) => cleanCell(r[left - 1])).filter(Boolean);
+    // Only if it looks like identifiers: filled, short, and (nearly) all different.
+    if (vals.length > 0 && vals.every((v) => v.length <= 20) && new Set(vals).size >= vals.length * 0.9) return left - 1;
+  }
+  return -1;
+}
+
 const PDF_LINK = /\.pdf(?:$|[?#])/i;
 const hasPdfLink = (urls: string[]) => urls.find((u) => PDF_LINK.test(u));
 
@@ -252,6 +285,7 @@ export function buildRows(table: string[][], mapping: ColumnMapping): BuildResul
   const cell = (r: string[], i: number | null) => (i === null ? '' : cleanCell(r[i]));
   const rows: CheckRow[] = [];
   const typeCol = findTypeColumn(table);
+  const idCol = findIdColumn(table, mapping);
   const fallbackCols = mapping.altUrl === null ? [] : mapping.altUrl !== undefined ? [mapping.altUrl] : autoFallbackColumns(table, mapping);
   let blankDropped = 0;
   let split = 0;
@@ -273,6 +307,7 @@ export function buildRows(table: string[][], mapping: ColumnMapping): BuildResul
     });
 
     const sheetType = typeCol === null ? '' : cell(r, typeCol);
+    const cityId = idCol >= 0 ? cell(r, idCol) : '';
     let urls = extractUrls(urlCell);
     let fallback = false;
     let fallbackColumn: string | undefined;
@@ -317,6 +352,7 @@ export function buildRows(table: string[][], mapping: ColumnMapping): BuildResul
         fingerprint: fingerprint(city, state, url),
         preIssues: [],
         extra,
+        ...(cityId ? { cityId } : {}),
         ...(sheetType ? { sheetType } : {}),
         ...(fallback ? { fallback: true, fallbackColumn } : {}),
         ...(hint ? { hint } : {}),
@@ -326,6 +362,24 @@ export function buildRows(table: string[][], mapping: ColumnMapping): BuildResul
 
   const duplicates = flagDuplicates(rows);
   return { rows, blankDropped, split, duplicates };
+}
+
+/**
+ * Rows saved by an earlier version lack fields read from the sheet since (City ID, the sheet's type, the hint and
+ * fallback column). Rebuild the sheet's rows and copy those fields onto the saved rows whose link has not changed,
+ * so nothing is re-checked and nothing else about the saved rows moves.
+ */
+export function refreshRowFields(saved: CheckRow[], table: string[][] | null | undefined, mapping: ColumnMapping | null | undefined): CheckRow[] {
+  if (!table || !mapping || mapping.url == null) return saved;
+  const fresh = new Map(buildRows(table, mapping).rows.map((r) => [r.id, r]));
+  return saved.map((row) => {
+    const f = fresh.get(row.id);
+    if (!f || f.fingerprint !== row.fingerprint) return row;
+    const { cityId, sheetType, hint, fallback, fallbackColumn } = f;
+    const next = { ...row, cityId, sheetType, hint, fallback: fallback ?? row.fallback, fallbackColumn };
+    for (const k of ['cityId', 'sheetType', 'hint', 'fallbackColumn'] as const) if (next[k] === undefined) delete next[k];
+    return next;
+  });
 }
 
 /** Marks every row whose link appears more than once. Rows are kept. Returns the number of flagged rows. */
