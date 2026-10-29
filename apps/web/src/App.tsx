@@ -277,9 +277,10 @@ export function App() {
 
   // ---- export ---------------------------------------------------------------
   const stamp = new Date().toISOString().slice(0, 10);
+  const urlHeader = () => (s.sheet && s.sheet.mapping.url !== null ? (s.sheet.table[0]?.[s.sheet.mapping.url] ?? '').trim() : undefined);
   const checkedResults = () => s.rows.flatMap((r) => (s.results[r.id] ? [s.results[r.id]] : []));
-  const exportFull = useCallback(() => { flush(); download(`zoning-audit-${stamp}.csv`, buildFullCsv(checkedResults())); }, [flush, s.rows, s.results, stamp]);
-  const exportIssues = useCallback(() => { flush(); download(`zoning-audit-issues-${stamp}.csv`, buildIssuesCsv(checkedResults())); }, [flush, s.rows, s.results, stamp]);
+  const exportFull = useCallback(() => { flush(); download(`zoning-audit-${stamp}.csv`, buildFullCsv(checkedResults(), s.rows, urlHeader())); }, [flush, s.rows, s.results, stamp]);
+  const exportIssues = useCallback(() => { flush(); download(`zoning-audit-issues-${stamp}.csv`, buildIssuesCsv(checkedResults(), s.rows, urlHeader())); }, [flush, s.rows, s.results, stamp]);
   const exportSheetReady = useCallback(() => {
     flush();
     if (!s.sheet) return fail(new Error('Press Sync once so the tool has your sheet, then export again.'));

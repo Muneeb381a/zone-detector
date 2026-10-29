@@ -69,9 +69,28 @@ export function rowOf(r: CheckResult): unknown[] {
   ];
 }
 
-/** Full export. Rows not yet checked are omitted; `results` should already be in sheet order. */
-export function buildFullCsv(results: CheckResult[]): string {
-  return toCsv(FULL_CSV_COLUMNS, results.map(rowOf));
+/** The two link columns of the client sheet, repeated at the end of the export when the sheet rows are given. */
+export const SHEET_LINK_COLUMNS = ['TML Link', 'Endpoint Link'] as const;
+
+const TML_HEADER = /^(\d+\s*[-:]\s*)?tml\b/i;
+
+/** The sheet's TML cell ("TML: 100 | NMF: 0" column) and its endpoint cell ("100 - Endpoint_Links"), as written. */
+function sheetLinksOf(row: CheckRow | undefined, urlHeader: string | undefined): [string, string] {
+  if (!row) return ['', ''];
+  const entries = Object.entries(row.extra ?? {});
+  const tml = entries.find(([h]) => TML_HEADER.test(h.trim()))?.[1] ?? '';
+  const endpoint = (urlHeader && row.extra?.[urlHeader]) || entries.find(([h]) => /endpoint/i.test(h))?.[1] || '';
+  return [tml, endpoint];
+}
+
+/**
+ * Full export. Rows not yet checked are omitted; `results` should already be in sheet order.
+ * With the sheet's `rows` (and its mapping), the sheet's TML and Endpoint link cells are added as two last columns.
+ */
+export function buildFullCsv(results: CheckResult[], rows?: CheckRow[], urlHeader?: string): string {
+  if (!rows) return toCsv(FULL_CSV_COLUMNS, results.map(rowOf));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return toCsv([...FULL_CSV_COLUMNS, ...SHEET_LINK_COLUMNS], results.map((r) => [...rowOf(r), ...sheetLinksOf(byId.get(r.id), urlHeader)]));
 }
 
 // ---------------------------------------------------------------------------
@@ -79,8 +98,8 @@ export function buildFullCsv(results: CheckResult[]): string {
 // ---------------------------------------------------------------------------
 
 /** Maps that did not load (the "Issues" card). Same columns as the full export. */
-export function buildIssuesCsv(results: CheckResult[]): string {
-  return toCsv(FULL_CSV_COLUMNS, results.filter((r) => isFailure(r.status)).map(rowOf));
+export function buildIssuesCsv(results: CheckResult[], rows?: CheckRow[], urlHeader?: string): string {
+  return buildFullCsv(results.filter((r) => isFailure(r.status)), rows, urlHeader);
 }
 
 // ---------------------------------------------------------------------------
