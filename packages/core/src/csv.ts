@@ -284,11 +284,11 @@ export function buildSheetReadyCsv(table: string[][], rows: CheckRow[], results:
   return toCsv(m.table[0], m.table.slice(1));
 }
 
-export const COPY_COLUMNS = ['ID', 'City', 'County', 'State', 'Old date', 'New date', 'Primary Date', 'Review Date', 'Updation Status', 'Map Issues'] as const;
+export const COPY_COLUMNS = ['ID', 'City', 'County', 'State', 'Old date', 'New date', 'Primary Date', 'Review Date', 'Updation Status', 'Map Issues', ...SHEET_LINK_COLUMNS] as const;
 
 /**
  * The compact table behind "Review & copy": only ID, City, County, State, Old date, New date (all read from the
- * sheet as written) plus the audit's Primary Date, Review Date, Updation Status and Map Issues. One line per
+ * sheet as written), the audit's Primary Date, Review Date, Updation Status and Map Issues, and the sheet's TML and Endpoint link cells. One line per
  * source line, blank lines kept, so pasting it next to the sheet cannot shift a row. The ID is always the sheet's
  * own ID cell (never generated); with no ID column found, the cell stays empty.
  */
@@ -306,6 +306,8 @@ export function buildCopyTable(
   const idIdx = findIdColumn(table, { ...mapping, url: (mapping as ColumnMapping).url ?? null, id: (mapping as ColumnMapping).id });
   const oldIdx = findColumn(header, ['olddate']);
   const newIdx = findColumn(header, ['newdate']);
+  const tmlIdx = header.findIndex((h) => TML_HEADER.test((h ?? '').trim()));
+  const endpointIdx = mapping.url ?? header.findIndex((h) => /endpoint/i.test(h ?? ''));
   const matrix = buildWriteBackMatrix(table, rows, results, fmt);
   const get = (src: string[], i: number | null) => (i !== null && i >= 0 ? (src[i] ?? '').trim() : '');
   const out: string[][] = [[...COPY_COLUMNS]];
@@ -318,6 +320,7 @@ export function buildCopyTable(
       get(src, oldIdx), get(src, newIdx),
       // audit cells follow WRITEBACK_SPEC order: Primary Date, Updation Status, Last Reviewed, Map Issues
       a[0] ?? '', a[2] ?? '', a[1] ?? '', a[3] ?? '',
+      get(src, tmlIdx), get(src, endpointIdx),
     ]);
   }
   return out;
