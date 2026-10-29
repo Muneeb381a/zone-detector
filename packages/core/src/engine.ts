@@ -115,12 +115,30 @@ function arcgisError(err: any, status: number): Failure {
   return new Failure('ARCGIS_ERROR', `ArcGIS returned an error${code ? ` (${code})` : ''}${msg ? `: ${msg}` : ''}.`);
 }
 
+/**
+ * Say why a 401/403 happened, from what the server itself wrote. A login page or token wording means the service is
+ * private (credentials are needed); a firewall / "access denied" page means the server refuses this network or location.
+ * The server's own words are quoted, so the message can be checked against the browser.
+ */
+export function accessDeniedMessage(status: number, body: string): string {
+  const text = (body ?? '').replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  const said = text.slice(0, 140);
+  const quote = said ? ` The server says: "${said}${text.length > 140 ? '…' : ''}".` : ' The server gave no explanation.';
+  if (/token|log\s?in|sign\s?in|credential|authenticat|unauthori[sz]ed|permission|not authorized|portal account|administrative approval/i.test(text)) {
+    return `Access denied (${status}): this service is private and needs a login or token.${quote}`;
+  }
+  if (/firewall|blocked|geo|country|region|not allowed|forbidden|access denied|cloudflare|akamai|imperva|incapsula|waf|your ip|ip address|bot|automated|security policy/i.test(text)) {
+    return `Access denied (${status}): the server blocks this request, usually by network or location, not by login.${quote}`;
+  }
+  return `Access denied (${status}): either the service is secured, or the server blocks this network or location.${quote}`;
+}
+
 function throwForStatus(res: HttpResponse): void {
   const s = res.status;
   const retryAfterMs = parseRetryAfter(res.headers['retry-after']);
   if (s === 404) throw new Failure('HTTP_404', 'Not found (404). The service was moved or deleted.');
   if (s === 410) throw new Failure('HTTP_410', 'Gone (410). The service was removed.');
-  if (s === 401 || s === 403) throw new Failure('HTTP_401_403', `Access denied (${s}). The service is secured, or the server blocks this location.`);
+  if (s === 401 || s === 403) throw new Failure('HTTP_401_403', accessDeniedMessage(s, res.body));
   if (s === 429) throw new Failure('HTTP_429', 'The server is rate limiting requests (429).', retryAfterMs);
   if (s >= 500) throw new Failure('HTTP_5XX', `Server error (${s}).`, retryAfterMs);
   if (s < 200 || s >= 300) throw new Failure('NOT_ARCGIS', `The server answered HTTP ${s}, not ArcGIS data.`);
